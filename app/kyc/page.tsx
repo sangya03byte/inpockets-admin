@@ -2,60 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
-
-type KycSubmission = {
-  kycId: string;
-  customerId: string;
-  customerName: string;
-  document: string;
-  provider: string;
-  status: "Manual Review" | "Pending Provider" | "Verified";
-  flag: string;
-  submitted: string;
-};
-
-const demoKycSubmissions: KycSubmission[] = [
-  {
-    kycId: "KYC-1001",
-    customerId: "CUST-1001",
-    customerName: "Rahul Sharma",
-    document: "Aadhaar",
-    provider: "DigiLocker",
-    status: "Manual Review",
-    flag: "Name mismatch",
-    submitted: "24 Sep 2026, 09:42 AM",
-  },
-  {
-    kycId: "KYC-1002",
-    customerId: "CUST-1002",
-    customerName: "Priya Singh",
-    document: "PAN",
-    provider: "External KYC Provider",
-    status: "Manual Review",
-    flag: "Document unclear",
-    submitted: "24 Sep 2026, 10:15 AM",
-  },
-  {
-    kycId: "KYC-1003",
-    customerId: "CUST-1003",
-    customerName: "Amit Kumar",
-    document: "Aadhaar",
-    provider: "DigiLocker",
-    status: "Pending Provider",
-    flag: "Awaiting verification",
-    submitted: "24 Sep 2026, 11:08 AM",
-  },
-  {
-    kycId: "KYC-1004",
-    customerId: "CUST-1004",
-    customerName: "Neha Verma",
-    document: "PAN",
-    provider: "External KYC Provider",
-    status: "Manual Review",
-    flag: "DOB mismatch",
-    submitted: "24 Sep 2026, 11:37 AM",
-  },
-];
+import { kycRecords, KycStatus } from "./kycData";
 
 export default function KycPage() {
   const [query, setQuery] = useState("");
@@ -66,7 +13,7 @@ export default function KycPage() {
   const filteredSubmissions = useMemo(() => {
     const normalizedQuery = submittedQuery.trim().toLowerCase();
 
-    return demoKycSubmissions.filter((submission) => {
+    return kycRecords.filter((submission) => {
       const matchesQuery =
         normalizedQuery === "" ||
         submission.kycId.toLowerCase().includes(normalizedQuery) ||
@@ -88,7 +35,7 @@ export default function KycPage() {
     setSubmittedStatus(status);
   }
 
-  function getStatusClasses(currentStatus: KycSubmission["status"]) {
+  function getStatusClasses(currentStatus: KycStatus) {
     if (currentStatus === "Manual Review") {
       return "bg-amber-100 text-amber-700";
     }
@@ -114,7 +61,7 @@ export default function KycPage() {
           </p>
         </div>
 
-        {/* Search Section */}
+        {/* Search */}
         <form
           onSubmit={handleSearch}
           className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
@@ -152,7 +99,6 @@ export default function KycPage() {
 
         {/* Results */}
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {/* Results Header */}
           <div className="border-b border-slate-200 px-8 py-7">
             <h2 className="text-2xl font-bold text-slate-950">
               KYC Submissions
@@ -179,7 +125,6 @@ export default function KycPage() {
               </p>
             </div>
           ) : (
-            /* Table */
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1100px]">
                 <thead className="bg-slate-50">
@@ -241,7 +186,6 @@ export default function KycPage() {
                       key={submission.kycId}
                       className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
                     >
-                      {/* KYC ID */}
                       <td className="px-8 py-6">
                         <Link
                           href={`/kyc/${submission.kycId}`}
@@ -251,7 +195,6 @@ export default function KycPage() {
                         </Link>
                       </td>
 
-                      {/* Customer */}
                       <td className="px-8 py-6">
                         <div className="font-medium text-slate-900">
                           {submission.customerName}
@@ -262,34 +205,29 @@ export default function KycPage() {
                         </div>
                       </td>
 
-                      {/* Document */}
                       <td className="px-8 py-6 text-slate-700">
                         {submission.document}
                       </td>
 
-                      {/* Provider */}
                       <td className="px-8 py-6 text-slate-700">
                         {submission.provider}
                       </td>
 
-                      {/* Status */}
                       <td className="px-8 py-6">
                         <span
                           className={`inline-flex rounded-full px-4 py-2 text-sm font-semibold ${getStatusClasses(
-                            submission.status
+                            submission.status,
                           )}`}
                         >
                           {submission.status}
                         </span>
                       </td>
 
-                      {/* Flag */}
                       <td className="px-8 py-6 text-slate-700">
                         {submission.flag}
                       </td>
 
-                      {/* Submitted */}
-                      <td className="px-8 py-6 whitespace-nowrap text-slate-500">
+                      <td className="whitespace-nowrap px-8 py-6 text-slate-500">
                         {submission.submitted}
                       </td>
                     </tr>
