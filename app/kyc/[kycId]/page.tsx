@@ -1,109 +1,24 @@
-"use client";
-
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useMemo } from "react";
+import { notFound } from "next/navigation";
+import { kycRecords } from "../kycData";
 
-type KycRecord = {
-  kycId: string;
-  customerId: string;
-  customerName: string;
-  document: string;
-  documentNumber: string;
-  provider: string;
-  status: "Manual Review" | "Pending Provider" | "Verified";
-  flag: string;
-  submitted: string;
-  verificationAttempts: number;
+type KycDetailPageProps = {
+  params: Promise<{
+    kycId: string;
+  }>;
 };
 
-const demoKycRecords: KycRecord[] = [
-  {
-    kycId: "KYC-1001",
-    customerId: "CUST-1001",
-    customerName: "Rahul Sharma",
-    document: "Aadhaar",
-    documentNumber: "XXXX XXXX 4521",
-    provider: "DigiLocker",
-    status: "Manual Review",
-    flag: "Name mismatch",
-    submitted: "24 Sep 2026, 09:42 AM",
-    verificationAttempts: 2,
-  },
-  {
-    kycId: "KYC-1002",
-    customerId: "CUST-1002",
-    customerName: "Priya Singh",
-    document: "PAN",
-    documentNumber: "XXXXX1234X",
-    provider: "External KYC Provider",
-    status: "Manual Review",
-    flag: "Document unclear",
-    submitted: "24 Sep 2026, 10:15 AM",
-    verificationAttempts: 1,
-  },
-  {
-    kycId: "KYC-1003",
-    customerId: "CUST-1003",
-    customerName: "Amit Kumar",
-    document: "Aadhaar",
-    documentNumber: "XXXX XXXX 7824",
-    provider: "DigiLocker",
-    status: "Pending Provider",
-    flag: "Awaiting verification",
-    submitted: "24 Sep 2026, 11:08 AM",
-    verificationAttempts: 1,
-  },
-  {
-    kycId: "KYC-1004",
-    customerId: "CUST-1004",
-    customerName: "Neha Verma",
-    document: "PAN",
-    documentNumber: "XXXXX5678P",
-    provider: "External KYC Provider",
-    status: "Manual Review",
-    flag: "DOB mismatch",
-    submitted: "24 Sep 2026, 11:37 AM",
-    verificationAttempts: 2,
-  },
-];
+export default async function KycDetailPage({
+  params,
+}: KycDetailPageProps) {
+  const { kycId } = await params;
 
-export default function KycDetailPage() {
-  const params = useParams();
-
-  const kycId = Array.isArray(params.kycId)
-    ? params.kycId[0]
-    : params.kycId;
-
-  const kycRecord = useMemo(
-    () => demoKycRecords.find((record) => record.kycId === kycId),
-    [kycId]
+  const kycRecord = kycRecords.find(
+    (record) => record.kycId.toLowerCase() === kycId.toLowerCase(),
   );
 
   if (!kycRecord) {
-    return (
-      <main className="min-h-screen bg-slate-50 px-6 py-10">
-        <div className="mx-auto max-w-5xl">
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 shadow-sm">
-            <h1 className="text-3xl font-bold text-slate-950">
-              KYC submission not found
-            </h1>
-
-            <p className="mt-3 text-slate-600">
-              The KYC submission you are looking for does not exist in the
-              current demo data.
-            </p>
-
-            <Link
-              href="/kyc"
-              className="mt-6 inline-flex rounded-xl bg-slate-950 px-5 py-3 font-semibold text-white hover:bg-slate-800"
-            >
-              Back to KYC Queue
-            </Link>
-          </div>
-        </div>
-      </main>
-    );
+    notFound();
   }
 
   const statusClasses =
@@ -150,76 +65,80 @@ export default function KycDetailPage() {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main information */}
           <div className="space-y-6 lg:col-span-2">
-            {/* Customer information */}
+            {/* Customer Information */}
             <section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
               <h2 className="text-xl font-bold text-slate-950">
                 Customer Information
               </h2>
 
-              <div className="mt-6 grid gap-6 sm:grid-cols-2">
+              <dl className="mt-6 grid gap-6 sm:grid-cols-2">
                 <div>
-                  <p className="text-sm text-slate-500">Customer ID</p>
-                  <p className="mt-1 font-semibold text-slate-900">
+                  <dt className="text-sm text-slate-500">Customer ID</dt>
+                  <dd className="mt-1 font-semibold text-slate-900">
                     {kycRecord.customerId}
-                  </p>
+                  </dd>
                 </div>
 
                 <div>
-                  <p className="text-sm text-slate-500">Customer Name</p>
-                  <p className="mt-1 font-semibold text-slate-900">
+                  <dt className="text-sm text-slate-500">Customer Name</dt>
+                  <dd className="mt-1 font-semibold text-slate-900">
                     {kycRecord.customerName}
-                  </p>
+                  </dd>
                 </div>
-              </div>
+              </dl>
             </section>
 
-            {/* KYC information */}
+            {/* KYC Information */}
             <section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
               <h2 className="text-xl font-bold text-slate-950">
                 KYC Information
               </h2>
 
-              <div className="mt-6 grid gap-6 sm:grid-cols-2">
+              <dl className="mt-6 grid gap-6 sm:grid-cols-2">
                 <div>
-                  <p className="text-sm text-slate-500">Document Type</p>
-                  <p className="mt-1 font-semibold text-slate-900">
+                  <dt className="text-sm text-slate-500">Document Type</dt>
+                  <dd className="mt-1 font-semibold text-slate-900">
                     {kycRecord.document}
-                  </p>
+                  </dd>
                 </div>
 
                 <div>
-                  <p className="text-sm text-slate-500">Document Number</p>
-                  <p className="mt-1 font-semibold text-slate-900">
+                  <dt className="text-sm text-slate-500">
+                    Document Number
+                  </dt>
+                  <dd className="mt-1 font-semibold text-slate-900">
                     {kycRecord.documentNumber}
-                  </p>
+                  </dd>
                 </div>
 
                 <div>
-                  <p className="text-sm text-slate-500">Verification Provider</p>
-                  <p className="mt-1 font-semibold text-slate-900">
+                  <dt className="text-sm text-slate-500">
+                    Verification Provider
+                  </dt>
+                  <dd className="mt-1 font-semibold text-slate-900">
                     {kycRecord.provider}
-                  </p>
+                  </dd>
                 </div>
 
                 <div>
-                  <p className="text-sm text-slate-500">
+                  <dt className="text-sm text-slate-500">
                     Verification Attempts
-                  </p>
-                  <p className="mt-1 font-semibold text-slate-900">
+                  </dt>
+                  <dd className="mt-1 font-semibold text-slate-900">
                     {kycRecord.verificationAttempts}
-                  </p>
+                  </dd>
                 </div>
 
                 <div>
-                  <p className="text-sm text-slate-500">Submitted</p>
-                  <p className="mt-1 font-semibold text-slate-900">
+                  <dt className="text-sm text-slate-500">Submitted</dt>
+                  <dd className="mt-1 font-semibold text-slate-900">
                     {kycRecord.submitted}
-                  </p>
+                  </dd>
                 </div>
-              </div>
+              </dl>
             </section>
 
-            {/* Review flag */}
+            {/* Review Flag */}
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-7">
               <h2 className="text-xl font-bold text-slate-950">
                 Review Flag
@@ -237,7 +156,7 @@ export default function KycDetailPage() {
             </section>
           </div>
 
-          {/* Review actions */}
+          {/* Review Actions */}
           <aside>
             <section className="sticky top-6 rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
               <h2 className="text-xl font-bold text-slate-950">
@@ -245,29 +164,31 @@ export default function KycDetailPage() {
               </h2>
 
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                These actions are placeholders for now. Real approval,
-                rejection, and re-verification will be connected to the
-                backend later.
+                Review actions will be connected to the backend once the KYC
+                review API is available.
               </p>
 
               <div className="mt-6 space-y-3">
                 <button
                   type="button"
-                  className="w-full rounded-xl bg-slate-950 px-5 py-3 font-semibold text-white transition hover:bg-slate-800"
+                  disabled
+                  className="w-full cursor-not-allowed rounded-xl bg-slate-200 px-5 py-3 font-semibold text-slate-500"
                 >
                   Approve KYC
                 </button>
 
                 <button
                   type="button"
-                  className="w-full rounded-xl border border-red-200 bg-white px-5 py-3 font-semibold text-red-700 transition hover:bg-red-50"
+                  disabled
+                  className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-5 py-3 font-semibold text-slate-400"
                 >
                   Reject KYC
                 </button>
 
                 <button
                   type="button"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-800 transition hover:bg-slate-50"
+                  disabled
+                  className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-5 py-3 font-semibold text-slate-400"
                 >
                   Request Re-verification
                 </button>
@@ -275,8 +196,9 @@ export default function KycDetailPage() {
 
               <div className="mt-6 border-t border-slate-200 pt-6">
                 <p className="text-xs leading-5 text-slate-500">
-                  Demo actions only. Consequential actions will require a
-                  reason and audit event when connected to the backend.
+                  These actions are intentionally disabled until backend
+                  integration is available. Consequential actions will
+                  require a reason and audit event.
                 </p>
               </div>
             </section>
