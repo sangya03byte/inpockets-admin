@@ -1,42 +1,39 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { auditEntries } from "./auditData";
+import { auditLogs } from "./auditData";
 
 export default function AuditLogPage() {
   const [search, setSearch] = useState("");
-  const [actionFilter, setActionFilter] = useState("All");
+  const [actionFilter, setActionFilter] = useState("ALL");
 
-  const actions = [
-    "All",
-    ...Array.from(new Set(auditEntries.map((entry) => entry.action))),
-  ];
-
-  const filteredEntries = useMemo(() => {
+  const filteredLogs = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return auditEntries.filter((entry) => {
+    return auditLogs.filter((log) => {
       const matchesSearch =
         !query ||
-        entry.actor.toLowerCase().includes(query) ||
-        entry.action.toLowerCase().includes(query) ||
-        entry.entity.toLowerCase().includes(query) ||
-        entry.entityId.toLowerCase().includes(query) ||
-        entry.reason.toLowerCase().includes(query);
+        log.id.toLowerCase().includes(query) ||
+        log.actor.toLowerCase().includes(query) ||
+        log.entity.toLowerCase().includes(query) ||
+        log.entityId.toLowerCase().includes(query) ||
+        log.reason.toLowerCase().includes(query);
 
       const matchesAction =
-        actionFilter === "All" || entry.action === actionFilter;
+        actionFilter === "ALL" || log.action === actionFilter;
 
       return matchesSearch && matchesAction;
     });
   }, [search, actionFilter]);
+
+  const actions = [...new Set(auditLogs.map((log) => log.action))];
 
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
       <div className="mx-auto max-w-7xl">
         <div className="mb-8">
           <p className="text-sm font-medium text-slate-500">
-            Admin & Audit
+            Administration
           </p>
 
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
@@ -44,146 +41,130 @@ export default function AuditLogPage() {
           </h1>
 
           <p className="mt-2 text-slate-600">
-            Review administrative actions and recorded reasons.
+            Read-only history of administrative actions and configuration
+            changes.
           </p>
         </div>
 
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-6 py-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">
-                  Activity History
-                </h2>
+        <section className="rounded-xl border border-slate-200 bg-white p-6">
+          <div className="grid gap-5 md:grid-cols-[1fr_260px]">
+            <div>
+              <label
+                htmlFor="audit-search"
+                className="text-sm font-medium text-slate-700"
+              >
+                Search
+              </label>
 
-                <p className="mt-1 text-sm text-slate-500">
-                  Read-only record of administrative activity.
-                </p>
-              </div>
+              <input
+                id="audit-search"
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by actor, entity, ID or reason"
+                className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-2.5 text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-500"
+              />
+            </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <div>
-                  <label
-                    htmlFor="audit-search"
-                    className="mb-1 block text-xs font-medium text-slate-500"
-                  >
-                    Search
-                  </label>
+            <div>
+              <label
+                htmlFor="audit-action"
+                className="text-sm font-medium text-slate-700"
+              >
+                Action
+              </label>
 
-                  <input
-                    id="audit-search"
-                    type="text"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Actor, action, entity..."
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-500 sm:w-64"
-                  />
-                </div>
+              <select
+                id="audit-action"
+                value={actionFilter}
+                onChange={(event) => setActionFilter(event.target.value)}
+                className="mt-2 w-full rounded-lg border border-slate-300 px-4 py-2.5 text-slate-900 outline-none focus:border-slate-500"
+              >
+                <option value="ALL">All Actions</option>
 
-                <div>
-                  <label
-                    htmlFor="action-filter"
-                    className="mb-1 block text-xs font-medium text-slate-500"
-                  >
-                    Action
-                  </label>
-
-                  <select
-                    id="action-filter"
-                    value={actionFilter}
-                    onChange={(event) => setActionFilter(event.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500 sm:w-64"
-                  >
-                    {actions.map((action) => (
-                      <option key={action} value={action}>
-                        {action}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                {actions.map((action) => (
+                  <option key={action} value={action}>
+                    {action}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
+        </section>
 
-          {filteredEntries.length === 0 ? (
-            <div className="px-6 py-16 text-center">
-              <h3 className="text-sm font-semibold text-slate-900">
-                No audit entries found
-              </h3>
+        <section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[950px] text-left">
+              <thead className="border-b border-slate-200 bg-slate-50">
+                <tr>
+                  <th className="px-6 py-4 text-sm font-semibold text-slate-700">
+                    Actor
+                  </th>
 
-              <p className="mt-1 text-sm text-slate-500">
-                Try changing your search or action filter.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1000px] text-left">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Actor
-                    </th>
+                  <th className="px-6 py-4 text-sm font-semibold text-slate-700">
+                    Action
+                  </th>
 
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Action
-                    </th>
+                  <th className="px-6 py-4 text-sm font-semibold text-slate-700">
+                    Entity
+                  </th>
 
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Entity
-                    </th>
+                  <th className="px-6 py-4 text-sm font-semibold text-slate-700">
+                    Timestamp
+                  </th>
 
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Timestamp
-                    </th>
+                  <th className="px-6 py-4 text-sm font-semibold text-slate-700">
+                    Reason
+                  </th>
+                </tr>
+              </thead>
 
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Reason
-                    </th>
+              <tbody className="divide-y divide-slate-200">
+                {filteredLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-5">
+                      <p className="font-medium">{log.actor}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {log.id}
+                      </p>
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                        {log.action}
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-5">
+                      <p className="font-medium">{log.entity}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {log.entityId}
+                      </p>
+                    </td>
+
+                    <td className="px-6 py-5 text-sm text-slate-600">
+                      {log.timestamp}
+                    </td>
+
+                    <td className="max-w-md px-6 py-5 text-sm text-slate-600">
+                      {log.reason}
+                    </td>
                   </tr>
-                </thead>
+                ))}
 
-                <tbody className="divide-y divide-slate-200">
-                  {filteredEntries.map((entry) => (
-                    <tr key={entry.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4">
-                        <p className="text-sm font-medium text-slate-900">
-                          {entry.actor}
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-400">
-                          {entry.id}
-                        </p>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                          {entry.action}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <p className="text-sm font-medium text-slate-900">
-                          {entry.entity}
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-500">
-                          {entry.entityId}
-                        </p>
-                      </td>
-
-                      <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
-                        {entry.timestamp}
-                      </td>
-
-                      <td className="max-w-md px-6 py-4 text-sm leading-6 text-slate-600">
-                        {entry.reason}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                {filteredLogs.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-6 py-12 text-center text-slate-500"
+                    >
+                      No audit records match the current filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </div>
     </main>
