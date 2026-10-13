@@ -1,301 +1,69 @@
 "use client";
 
-import Link from "next/link";
-import { use, useState } from "react";
-import { loanLevels } from "../../loanLevelsData";
+import { useParams } from "next/navigation";
+import { type FormEvent, useState } from "react";
+import { Button, Card, DetailLayout, Field, inputClass, NotFoundState, Notice, PageHeader, StatusBadge } from "@/components/ui";
+import { getLevel } from "@/lib/mock";
 
-type PageProps = {
-  params: Promise<{
-    levelId: string;
-  }>;
-};
+export default function LoanLevelPage() {
+  const { levelId } = useParams<{ levelId: string }>();
+  const level = getLevel(levelId);
+  const [min, setMin] = useState(String(level?.min ?? ""));
+  const [max, setMax] = useState(String(level?.max ?? ""));
+  const [tenure, setTenure] = useState(String(level?.maxTenureMonths ?? ""));
+  const [decision, setDecision] = useState<string>(level?.decision ?? "AUTO");
+  const [saved, setSaved] = useState(false);
+  const [touched, setTouched] = useState(false);
 
-export default function LoanLevelDetailPage({ params }: PageProps) {
-  const { levelId } = use(params);
+  if (!level) return <NotFoundState what="Loan level" backHref="/policy/loan-levels" backLabel="Back to loan levels" />;
 
-  const level = loanLevels.find((item) => item.id === levelId);
+  const errors: string[] = [];
+  const nMin = Number(min), nMax = Number(max), nTen = Number(tenure);
+  if (!(nMin > 0)) errors.push("Minimum amount must be greater than zero.");
+  if (!(nMax > nMin)) errors.push("Maximum amount must be greater than the minimum.");
+  if (!(Number.isInteger(nTen) && nTen >= 1)) errors.push("Tenure must be a whole number of months, at least 1.");
 
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showChangeCreated, setShowChangeCreated] = useState(false);
-
-  const [minAmount, setMinAmount] = useState(
-    level?.minAmount.toString() ?? "",
-  );
-  const [maxAmount, setMaxAmount] = useState(
-    level?.maxAmount.toString() ?? "",
-  );
-  const [maxTenureMonths, setMaxTenureMonths] = useState(
-    level?.maxTenureMonths.toString() ?? "",
-  );
-  const [decisionMode, setDecisionMode] = useState(
-    level?.decisionMode ?? "AUTO",
-  );
-  const [changeReason, setChangeReason] = useState("");
-
-  if (!level) {
-    return (
-      <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
-        <div className="mx-auto max-w-5xl">
-          <p className="text-sm font-medium text-slate-500">
-            Policy & Configuration
-          </p>
-
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            Loan level not found
-          </h1>
-
-          <p className="mt-2 text-slate-600">
-            The requested loan level does not exist.
-          </p>
-
-          <Link
-            href="/policy/loan-levels"
-            className="mt-6 inline-block text-sm font-medium text-slate-700 hover:text-slate-950"
-          >
-            ← Back to Loan Levels
-          </Link>
-        </div>
-      </main>
-    );
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    setTouched(true);
+    setSaved(false);
+    if (errors.length === 0) setSaved(true);
   }
 
-  const handleCreateChange = () => {
-    if (!changeReason.trim()) {
-      return;
-    }
-
-    setShowEditModal(false);
-    setShowChangeCreated(true);
-  };
+  const num = (set: (v: string) => void) => (e: { target: { value: string } }) => { set(e.target.value.replace(/[^\d]/g, "")); setSaved(false); };
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
-      <div className="mx-auto max-w-5xl">
-        <Link
-          href="/policy/loan-levels"
-          className="text-sm font-medium text-slate-600 hover:text-slate-950"
-        >
-          ← Back to Loan Levels
-        </Link>
+    <>
+      <PageHeader crumbs={[{ label: "Lending policy", href: "/policy" }, { label: "Loan levels", href: "/policy/loan-levels" }, { label: level.id }]} title={`Level ${level.id}`} badge={<StatusBadge status={level.decision} />} description={level.progression} />
+      {saved && <Notice tone="ok">Saved to draft policy version 3.3. It goes live only after a second person approves it.</Notice>}
+      {touched && errors.length > 0 && <Notice tone="bad">{errors.join(" ")}</Notice>}
 
-        <div className="mb-8 mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">
-              Policy & Configuration
-            </p>
-
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-              {level.name}
-            </h1>
-
-            <p className="mt-2 text-slate-600">{level.id}</p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowEditModal(true)}
-            className="w-fit rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-          >
-            Edit Level
-          </button>
-        </div>
-
-        <section className="grid gap-6 md:grid-cols-2">
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Minimum Loan Amount
-            </p>
-
-            <p className="mt-2 text-2xl font-semibold">
-              ₹{level.minAmount.toLocaleString("en-IN")}
-            </p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Maximum Loan Amount
-            </p>
-
-            <p className="mt-2 text-2xl font-semibold">
-              ₹{level.maxAmount.toLocaleString("en-IN")}
-            </p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Maximum Tenure
-            </p>
-
-            <p className="mt-2 text-2xl font-semibold">
-              {level.maxTenureMonths} months
-            </p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Decision Mode
-            </p>
-
-            <p className="mt-2 text-2xl font-semibold">
-              {level.decisionMode === "AUTO"
-                ? "AUTO"
-                : "MANUAL REVIEW"}
-            </p>
-          </article>
-        </section>
-
-        {showChangeCreated && (
-          <section className="mt-6 rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-semibold text-slate-950">
-              Change created
-            </p>
-
-            <p className="mt-1 text-sm text-slate-600">
-              A draft configuration change has been created for this loan
-              level. The current configuration remains unchanged until the
-              backend workflow is connected.
-            </p>
-
-            <div className="mt-4 rounded-lg bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-700">
-                Change reason
-              </p>
-
-              <p className="mt-1 text-sm text-slate-600">
-                {changeReason}
-              </p>
-            </div>
-          </section>
-        )}
-      </div>
-
-      {showEditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
-          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-            <h2 className="text-xl font-semibold">
-              Create Configuration Change
-            </h2>
-
-            <p className="mt-2 text-sm text-slate-600">
-              Changes are created as a new configuration change. The existing
-              level is not silently overwritten.
-            </p>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="minAmount"
-                  className="text-sm font-medium text-slate-700"
-                >
-                  Minimum Amount
-                </label>
-
-                <input
-                  id="minAmount"
-                  type="number"
-                  value={minAmount}
-                  onChange={(event) => setMinAmount(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="maxAmount"
-                  className="text-sm font-medium text-slate-700"
-                >
-                  Maximum Amount
-                </label>
-
-                <input
-                  id="maxAmount"
-                  type="number"
-                  value={maxAmount}
-                  onChange={(event) => setMaxAmount(event.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="maxTenure"
-                  className="text-sm font-medium text-slate-700"
-                >
-                  Maximum Tenure
-                </label>
-
-                <input
-                  id="maxTenure"
-                  type="number"
-                  value={maxTenureMonths}
-                  onChange={(event) =>
-                    setMaxTenureMonths(event.target.value)
-                  }
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="decisionMode"
-                  className="text-sm font-medium text-slate-700"
-                >
-                  Decision Mode
-                </label>
-
-                <select
-                  id="decisionMode"
-                  value={decisionMode}
-                  onChange={(event) =>
-                    setDecisionMode(
-                      event.target.value as "AUTO" | "MANUAL_REVIEW",
-                    )
-                  }
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
-                >
-                  <option value="AUTO">AUTO</option>
-                  <option value="MANUAL_REVIEW">MANUAL REVIEW</option>
+      <DetailLayout
+        main={
+          <Card title="Limits and decision mode">
+            <form onSubmit={submit} className="grid max-w-xl grid-cols-2 gap-5">
+              <Field label="Minimum amount (₹)"><input inputMode="numeric" value={min} onChange={num(setMin)} className={`${inputClass} num`} /></Field>
+              <Field label="Maximum amount (₹)"><input inputMode="numeric" value={max} onChange={num(setMax)} className={`${inputClass} num`} /></Field>
+              <Field label="Maximum tenure (months)"><input inputMode="numeric" value={tenure} onChange={num(setTenure)} className={`${inputClass} num`} /></Field>
+              <Field label="Decision mode">
+                <select value={decision} onChange={(e) => { setDecision(e.target.value); setSaved(false); }} className={inputClass}>
+                  <option value="AUTO">Automatic</option>
+                  <option value="MANUAL_REVIEW">Manual review</option>
                 </select>
-              </div>
-            </div>
-
-            <label
-              htmlFor="changeReason"
-              className="mt-5 block text-sm font-medium text-slate-700"
-            >
-              Change Reason
-            </label>
-
-            <textarea
-              id="changeReason"
-              value={changeReason}
-              onChange={(event) => setChangeReason(event.target.value)}
-              placeholder="Explain why this configuration change is needed..."
-              rows={4}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400"
-            />
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowEditModal(false)}
-                className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                disabled={!changeReason.trim()}
-                onClick={handleCreateChange}
-                className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Create Change
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </main>
+              </Field>
+              <div className="col-span-2 flex justify-end"><Button type="submit" variant="primary">Save to draft policy</Button></div>
+            </form>
+          </Card>
+        }
+        side={
+          <>
+            <Card title="Required checks">
+              <ul className="space-y-2 text-sm text-body">{level.requiredChecks.map((c) => (<li key={c} className="flex gap-2"><span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-brand-500" />{c}</li>))}</ul>
+            </Card>
+            <Card title="Approval authority"><p className="text-sm text-body">{level.approver}</p><p className="mt-1 text-xs text-muted">Best risk band allowed: {level.minRiskBand.toLowerCase()} or better</p></Card>
+          </>
+        }
+      />
+    </>
   );
 }

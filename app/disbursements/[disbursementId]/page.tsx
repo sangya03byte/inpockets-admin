@@ -1,154 +1,122 @@
+"use client";
+
 import Link from "next/link";
-import { disbursements } from "../disbursementData";
+import { useParams } from "next/navigation";
+import { useState } from "react";
+import { Button, Card, DefList, DetailLayout, NotFoundState, Notice, PageHeader, ReasonDialog, StatusBadge, type Tone } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { customerName, getDisbursement, type Disbursement } from "@/lib/mock";
+import { fmtDateTime, inr } from "@/lib/format";
 
-type PageProps = {
-  params: Promise<{
-    disbursementId: string;
-  }>;
-};
+type Action = "release" | "retry" | "verify" | null;
 
-export default async function DisbursementDetailPage({
-  params,
-}: PageProps) {
-  const { disbursementId } = await params;
+export default function DisbursementDetailPage() {
+  const { disbursementId } = useParams<{ disbursementId: string }>();
+  const base = getDisbursement(disbursementId);
+  const [status, setStatus] = useState<Disbursement["status"] | null>(null);
+  const [action, setAction] = useState<Action>(null);
+  const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null);
 
-  const disbursement = disbursements.find(
-    (item) => item.id === disbursementId,
-  );
+  if (!base) return <NotFoundState what="Payout" backHref="/disbursements" backLabel="Back to disbursements" />;
 
-  if (!disbursement) {
-    return (
-      <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
-        <div className="mx-auto max-w-5xl">
-          <p className="text-sm font-medium text-slate-500">
-            Loans & Payments
-          </p>
+  const d: Disbursement = { ...base, status: status ?? base.status };
+  const allPass = d.checks.every((c) => c.ok);
+  const failing = d.checks.filter((c) => !c.ok);
 
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            Disbursement not found
-          </h1>
-
-          <p className="mt-2 text-slate-600">
-            The requested disbursement record does not exist.
-          </p>
-
-          <Link
-            href="/disbursements"
-            className="mt-6 inline-block text-sm font-medium text-slate-700 hover:text-slate-950"
-          >
-            ← Back to Disbursement Monitoring
-          </Link>
-        </div>
-      </main>
-    );
-  }
-
-  const canRetry =
-    disbursement.status === "FAILED" ||
-    disbursement.status === "REQUIRES_REVIEW";
+  const finish = (next: Disbursement["status"], text: string, tone: Tone) => {
+    setStatus(next);
+    setNotice({ tone, text });
+    setAction(null);
+  };
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
-      <div className="mx-auto max-w-5xl">
-        <Link
-          href="/disbursements"
-          className="text-sm font-medium text-slate-600 hover:text-slate-950"
-        >
-          ← Back to Disbursement Monitoring
-        </Link>
+    <>
+      <PageHeader
+        crumbs={[{ label: "Disbursements", href: "/disbursements" }, { label: d.id }]}
+        title={d.id}
+        badge={<StatusBadge status={d.status} />}
+        description={`${customerName(d.customerId)} · ${inr(d.amount)} for ${d.loanId}`}
+      />
+      {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
 
-        <div className="mb-8 mt-6">
-          <p className="text-sm font-medium text-slate-500">
-            Loans & Payments
-          </p>
+      <DetailLayout
+        main={
+          <>
+            <Card title="Pre-disbursement checks" description="All of these must pass before a payout can be released.">
+              <ul className="divide-y divide-line">
+                {d.checks.map((c) => (
+                  <li key={c.label} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                    <span className={`flex size-6 shrink-0 items-center justify-center rounded-full ${c.ok ? "bg-ok-soft text-ok" : "bg-bad-soft text-bad"}`}>
+                      <Icon name={c.ok ? "check" : "x"} size={14} />
+                    </span>
+                    <span className="text-sm text-ink">{c.label}</span>
+                    {!c.ok && <span className="ml-auto text-xs font-medium text-bad">Failed</span>}
+                  </li>
+                ))}
+              </ul>
+            </Card>
 
-          <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight">
-                {disbursement.id}
-              </h1>
+            <Card title="Payout details">
+              <DefList
+                cols={3}
+                items={[
+                  { label: "Amount", value: inr(d.amount) },
+                  { label: "Bank", value: d.bank },
+                  { label: "Account", value: d.account },
+                  { label: "IFSC", value: d.ifsc },
+                  { label: "Name match with identity", value: `${d.nameMatch}%` },
+                  { label: "Attempts", value: d.attempts },
+                  { label: "Provider reference", value: d.providerRef },
+                  { label: "Idempotency key", value: <span className="num">{d.idempotencyKey}</span> },
+                  { label: "Created", value: fmtDateTime(d.created) },
+                ]}
+              />
+              {d.failureReason && <p className="wrap-any mt-5 rounded-lg bg-warn-soft px-4 py-3 text-sm text-warn">{d.failureReason}</p>}
+            </Card>
+          </>
+        }
+        side={
+          <>
+            <Card title="Action">
+              {d.status === "PENDING" && (
+                <>
+                  <Button variant="primary" className="w-full" disabled={!allPass} onClick={() => setAction("release")}>Release {inr(d.amount)}</Button>
+                  {!allPass && <p className="mt-3 text-xs text-bad">Blocked: {failing.map((f) => f.label.toLowerCase()).join(", ")}.</p>}
+                  <p className="mt-4 flex gap-2 rounded-lg bg-brand-50 p-3 text-xs text-muted">
+                    <Icon name="lock" size={14} className="mt-0.5 shrink-0 text-brand-500" />
+                    <span>Release is idempotent. Pressing it twice, or retrying after a timeout, cannot pay out twice. The customer sees success only after the provider confirms.</span>
+                  </p>
+                </>
+              )}
+              {d.status === "PROCESSING" && <p className="text-sm text-muted">Sent to the provider. Waiting for the confirmation webhook. No action needed.</p>}
+              {d.status === "SUCCESS" && <p className="text-sm text-muted">Paid and confirmed by the provider. The ledger entry and repayment schedule exist.</p>}
+              {d.status === "FAILED" && (
+                <>
+                  <Button className="w-full" onClick={() => setAction("retry")}>Retry payout</Button>
+                  <p className="mt-3 text-xs text-muted">Retries reuse the same idempotency key, so the provider rejects a duplicate if the first attempt actually went through.</p>
+                </>
+              )}
+              {d.status === "REQUIRES_REVIEW" && (
+                <>
+                  <Button className="w-full" onClick={() => setAction("verify")}>Confirm status with provider</Button>
+                  <p className="mt-3 text-xs text-muted">Do not retry until the provider confirms whether money moved. See the reconciliation record.</p>
+                </>
+              )}
+              {d.status === "REVERSED" && <p className="text-sm text-muted">This payout was reversed. A reversal entry exists in the ledger.</p>}
+            </Card>
+            <Card title="Links">
+              <ul className="space-y-2 text-sm">
+                <li><Link href={`/loans/${d.loanId}`} className="text-brand-700 hover:underline">Loan {d.loanId}</Link></li>
+                <li><Link href={`/customers/${d.customerId}`} className="text-brand-700 hover:underline">{customerName(d.customerId)}</Link></li>
+              </ul>
+            </Card>
+          </>
+        }
+      />
 
-              <p className="mt-2 text-slate-600">
-                Disbursement for loan {disbursement.loanId}.
-              </p>
-            </div>
-
-            <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
-              {disbursement.status}
-            </span>
-          </div>
-        </div>
-
-        <section className="grid gap-6 sm:grid-cols-2">
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Customer
-            </p>
-
-            <p className="mt-2 text-xl font-semibold">
-              {disbursement.customer}
-            </p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Loan
-            </p>
-
-            <p className="mt-2 text-xl font-semibold">
-              {disbursement.loanId}
-            </p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Amount
-            </p>
-
-            <p className="mt-2 text-2xl font-semibold">
-              ₹{disbursement.amount.toLocaleString("en-IN")}
-            </p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Created
-            </p>
-
-            <p className="mt-2 text-lg font-semibold">
-              {disbursement.createdAt}
-            </p>
-          </article>
-        </section>
-
-        <section className="mt-6 rounded-xl border border-slate-200 bg-white p-6">
-          <h2 className="text-lg font-semibold">Actions</h2>
-
-          <p className="mt-1 text-sm text-slate-500">
-            Retry is available for failed or review-required disbursements.
-          </p>
-
-          {canRetry ? (
-            <div className="mt-5">
-              <button
-                type="button"
-                className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
-              >
-                Retry Disbursement
-              </button>
-
-              <p className="mt-2 text-xs text-slate-500">
-                Mock action — backend integration will be added when the
-                disbursement API is available.
-              </p>
-            </div>
-          ) : (
-            <p className="mt-5 text-sm text-slate-500">
-              No action is currently required.
-            </p>
-          )}
-        </section>
-      </div>
-    </main>
+      <ReasonDialog open={action === "release"} title={`Release ${inr(d.amount)}`} description={`To ${d.bank} ${d.account} for ${customerName(d.customerId)}`} confirmLabel="Release payout" tone="primary" reasonLabel="Release note" reasonHint="For example: checks reviewed, bank name match 97%." onClose={() => setAction(null)} onConfirm={() => finish("PROCESSING", `Payout ${d.id} sent to the provider. Status changes to paid only after the provider confirms.`, "brand")} />
+      <ReasonDialog open={action === "retry"} title="Retry payout" confirmLabel="Retry payout" reasonLabel="Why is it safe to retry?" reasonHint="Confirm the earlier attempt did not credit the customer." onClose={() => setAction(null)} onConfirm={() => finish("PROCESSING", `Retry sent for ${d.id} using the same idempotency key.`, "brand")} />
+      <ReasonDialog open={action === "verify"} title="Confirm status with provider" confirmLabel="Record check" reasonLabel="What did the provider say?" onClose={() => setAction(null)} onConfirm={() => finish("PROCESSING", `Provider status check recorded for ${d.id}.`, "brand")} />
+    </>
   );
 }

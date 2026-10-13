@@ -1,156 +1,81 @@
+"use client";
+
 import Link from "next/link";
-import { loans } from "../loanData";
+import { useParams } from "next/navigation";
+import { Card, DataTable, type Column, DefList, DetailLayout, NotFoundState, PageHeader, Stat, StatusBadge, Grid } from "@/components/ui";
+import { customerName, disbursements, getLoan, payments, type Loan, type Payment } from "@/lib/mock";
+import { fmtDate, inr } from "@/lib/format";
 
-type PageProps = {
-  params: Promise<{
-    loanId: string;
-  }>;
-};
+export default function LoanDetailPage() {
+  const { loanId } = useParams<{ loanId: string }>();
+  const loan = getLoan(loanId);
+  if (!loan) return <NotFoundState what="Loan" backHref="/loans" backLabel="Back to loans" />;
 
-export default async function LoanDetailPage({ params }: PageProps) {
-  const { loanId } = await params;
-  const loan = loans.find((item) => item.id === loanId);
+  const myPayments = payments.filter((p) => p.loanId === loan.id);
+  const payout = disbursements.find((d) => d.loanId === loan.id);
+  const totalRepayable = loan.installments.reduce((s, i) => s + i.amount, 0);
+  const paid = loan.installments.reduce((s, i) => s + i.paid, 0);
 
-  if (!loan) {
-    return (
-      <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
-        <div className="mx-auto max-w-5xl">
-          <p className="text-sm font-medium text-slate-500">
-            Loans & Payments
-          </p>
-
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            Loan not found
-          </h1>
-
-          <p className="mt-2 text-slate-600">
-            The requested loan record does not exist.
-          </p>
-
-          <Link
-            href="/loans"
-            className="mt-6 inline-block text-sm font-medium text-slate-700 hover:text-slate-950"
-          >
-            ← Back to Loan Monitoring
-          </Link>
-        </div>
-      </main>
-    );
-  }
-
-  const formatAmount = (amount: number) =>
-    new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(amount);
+  const schedule: Column<Loan["installments"][number]>[] = [
+    { key: "no", header: "#", render: (i) => <span className="num">{i.no}</span> },
+    { key: "due", header: "Due date", render: (i) => fmtDate(i.due) },
+    { key: "amt", header: "Amount due", align: "right", render: (i) => <span className="num">{inr(i.amount)}</span> },
+    { key: "paid", header: "Paid", align: "right", render: (i) => <span className="num">{i.paid ? inr(i.paid) : "—"}</span> },
+    { key: "s", header: "Status", render: (i) => <StatusBadge status={i.status} /> },
+  ];
+  const payCols: Column<Payment>[] = [
+    { key: "id", header: "Payment", render: (p) => <span className="num font-medium text-ink">{p.id}</span> },
+    { key: "m", header: "Method", render: (p) => p.method },
+    { key: "a", header: "Amount", align: "right", render: (p) => <span className="num">{inr(p.amount)}</span> },
+    { key: "d", header: "Date", render: (p) => fmtDate(p.date) },
+    { key: "s", header: "Status", render: (p) => <StatusBadge status={p.status} /> },
+  ];
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6">
-          <Link
-            href="/loans"
-            className="text-sm font-medium text-slate-600 hover:text-slate-950"
-          >
-            ← Back to Loan Monitoring
-          </Link>
-        </div>
+    <>
+      <PageHeader
+        crumbs={[{ label: "Loans", href: "/loans" }, { label: loan.id }]}
+        title={loan.id}
+        badge={<StatusBadge status={loan.status} />}
+        description={`${customerName(loan.customerId)} · level ${loan.level} · ${loan.tenureMonths} ${loan.tenureMonths === 1 ? "month" : "months"}`}
+      />
 
-        <div className="mb-8">
-          <p className="text-sm font-medium text-slate-500">
-            Loans & Payments
-          </p>
+      <Grid cols={4} className="mb-6">
+        <Stat label="Principal" value={inr(loan.principal)} />
+        <Stat label="Outstanding" value={loan.outstanding ? inr(loan.outstanding) : "Nil"} />
+        <Stat label="Next due" value={loan.nextDue === "—" ? "—" : fmtDate(loan.nextDue)} />
+        <Stat label="Days past due" value={loan.dpd || "0"} tone={loan.dpd > 0 ? "bad" : undefined} hint={loan.dpd > 0 ? "In collections" : "On schedule"} />
+      </Grid>
 
-          <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight">
-                {loan.id}
-              </h1>
-
-              <p className="mt-2 text-slate-600">
-                Loan linked to application {loan.applicationId}.
-              </p>
-            </div>
-
-            <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
-              {loan.status}
-            </span>
-          </div>
-        </div>
-
-        <section className="grid gap-6 sm:grid-cols-2">
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Customer
-            </p>
-
-            <p className="mt-2 text-xl font-semibold text-slate-950">
-              {loan.customer}
-            </p>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Application: {loan.applicationId}
-            </p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Loan Status
-            </p>
-
-            <p className="mt-2 text-xl font-semibold text-slate-950">
-              {loan.status}
-            </p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Disbursed Amount
-            </p>
-
-            <p className="mt-2 text-2xl font-semibold text-slate-950">
-              {formatAmount(loan.disbursedAmount)}
-            </p>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Outstanding Balance
-            </p>
-
-            <p className="mt-2 text-2xl font-semibold text-slate-950">
-              {formatAmount(loan.outstandingBalance)}
-            </p>
-          </article>
-        </section>
-
-        <section className="mt-6 rounded-xl border border-slate-200 bg-white p-6">
-          <h2 className="text-lg font-semibold">Repayment Information</h2>
-
-          <div className="mt-6 grid gap-6 sm:grid-cols-2">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Next Due Date
-              </p>
-
-              <p className="mt-2 text-sm font-medium text-slate-900">
-                {loan.nextDueDate}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Application
-              </p>
-
-              <p className="mt-2 text-sm font-medium text-slate-900">
-                {loan.applicationId}
-              </p>
-            </div>
-          </div>
-        </section>
-      </div>
-    </main>
+      <DetailLayout
+        main={
+          <>
+            <Card title="Repayment schedule" description="Fixed at disbursement. Never recalculated after the loan goes active." flush>
+              <DataTable columns={schedule} rows={loan.installments} rowKey={(i) => String(i.no)} empty={<p className="px-5 py-8 text-center text-sm text-muted">The schedule is generated when the payout succeeds.</p>} />
+            </Card>
+            <Card title="Payments" flush>
+              <DataTable columns={payCols} rows={myPayments} rowKey={(p) => p.id} empty={<p className="px-5 py-8 text-center text-sm text-muted">No payments recorded.</p>} />
+            </Card>
+          </>
+        }
+        side={
+          <>
+            <Card title="Loan">
+              <DefList
+                cols={1}
+                items={[
+                  { label: "Customer", value: <Link href={`/customers/${loan.customerId}`} className="text-brand-700 hover:underline">{customerName(loan.customerId)}</Link> },
+                  { label: "Application", value: loan.applicationId ? <Link href={`/applications/${loan.applicationId}`} className="text-brand-700 hover:underline">{loan.applicationId}</Link> : "Earlier loan (before this console)" },
+                  { label: "Disbursed on", value: fmtDate(loan.disbursedOn) },
+                  { label: "Total repayable", value: totalRepayable ? inr(totalRepayable) : "—" },
+                  { label: "Repaid so far", value: inr(paid) },
+                  { label: "Payout", value: payout ? <Link href={`/disbursements/${payout.id}`} className="text-brand-700 hover:underline">{payout.id}</Link> : "—" },
+                ]}
+              />
+            </Card>
+          </>
+        }
+      />
+    </>
   );
 }

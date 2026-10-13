@@ -1,292 +1,131 @@
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { useParams } from "next/navigation";
+import { Avatar, Card, DataTable, type Column, DefList, DetailLayout, NotFoundState, PageHeader, StatusBadge, Timeline } from "@/components/ui";
+import { applications, complaints, fraudCases, getCustomer, kycRecords, loans, tickets, type Application, type Loan } from "@/lib/mock";
+import { fmtDate, fmtDateTime, inr } from "@/lib/format";
 
-type Customer = {
-  id: string;
-  name: string;
-  phone: string;
-  email: string;
-  status: "Active" | "Suspended";
-  joinedDate: string;
-  address: string;
-  totalLoans: number;
-  outstandingAmount: number;
-};
+export default function CustomerDetailPage() {
+  const { customerId } = useParams<{ customerId: string }>();
+  const c = getCustomer(customerId);
+  if (!c) return <NotFoundState what="Customer" backHref="/customers" backLabel="Back to customers" />;
 
-const customers: Customer[] = [
-  {
-    id: "CUST-1001",
-    name: "Rahul Sharma",
-    phone: "9876543210",
-    email: "rahul.sharma@example.com",
-    status: "Active",
-    joinedDate: "12 January 2025",
-    address: "Raipur, Chhattisgarh",
-    totalLoans: 2,
-    outstandingAmount: 42500,
-  },
-  {
-    id: "CUST-1002",
-    name: "Priya Singh",
-    phone: "9123456780",
-    email: "priya.singh@example.com",
-    status: "Active",
-    joinedDate: "28 February 2025",
-    address: "Bhilai, Chhattisgarh",
-    totalLoans: 1,
-    outstandingAmount: 18000,
-  },
-  {
-    id: "CUST-1003",
-    name: "Amit Kumar",
-    phone: "9988776655",
-    email: "amit.kumar@example.com",
-    status: "Suspended",
-    joinedDate: "7 March 2025",
-    address: "Durg, Chhattisgarh",
-    totalLoans: 3,
-    outstandingAmount: 76200,
-  },
-  {
-    id: "CUST-1004",
-    name: "Neha Verma",
-    phone: "9012345678",
-    email: "neha.verma@example.com",
-    status: "Active",
-    joinedDate: "19 April 2025",
-    address: "Korba, Chhattisgarh",
-    totalLoans: 1,
-    outstandingAmount: 250000,
-  },
-];
+  const myLoans = loans.filter((l) => l.customerId === c.id);
+  const myApps = applications.filter((a) => a.customerId === c.id);
+  const kyc = kycRecords.find((k) => k.customerId === c.id);
+  const fraud = fraudCases.filter((f) => f.customerId === c.id && f.state !== "CLEARED");
+  const myTickets = tickets.filter((t) => t.customerId === c.id);
+  const myComplaints = complaints.filter((x) => x.customerId === c.id);
+  const outstanding = myLoans.reduce((s, l) => s + l.outstanding, 0);
+  const overdue = myLoans.find((l) => l.status === "OVERDUE");
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(`${date}T00:00:00`));
-}
-
-export default async function CustomerDetailPage({
-  params,
-}: {
-  params: Promise<{ customerId: string }>;
-}) {
-  const { customerId } = await params;
-
-  const customer = customers.find(
-    (item) => item.id.toLowerCase() === customerId.toLowerCase(),
-  );
-
-  if (!customer) {
-    notFound();
-  }
+  const loanCols: Column<Loan>[] = [
+    { key: "id", header: "Loan", render: (l) => <span className="num font-medium text-ink">{l.id}</span> },
+    { key: "lvl", header: "Level", render: (l) => l.level },
+    { key: "p", header: "Principal", align: "right", render: (l) => <span className="num">{inr(l.principal)}</span> },
+    { key: "o", header: "Outstanding", align: "right", render: (l) => <span className="num">{l.outstanding ? inr(l.outstanding) : "—"}</span> },
+    { key: "s", header: "Status", render: (l) => <StatusBadge status={l.status} /> },
+  ];
+  const appCols: Column<Application>[] = [
+    { key: "id", header: "Application", render: (a) => <span className="num font-medium text-ink">{a.id}</span> },
+    { key: "r", header: "Requested", align: "right", render: (a) => <span className="num">{inr(a.requested)}</span> },
+    { key: "b", header: "Risk", render: (a) => (a.risk.band ? <StatusBadge status={a.risk.band} /> : "—") },
+    { key: "s", header: "Status", render: (a) => <StatusBadge status={a.state} /> },
+    { key: "d", header: "Submitted", render: (a) => <span className="whitespace-nowrap text-muted">{fmtDate(a.submitted)}</span> },
+  ];
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-10">
-      <div className="mx-auto max-w-5xl">
-        {/* Back navigation */}
-        <Link
-          href="/customers"
-          className="text-sm font-medium text-slate-600 hover:text-slate-950"
-        >
-          ← Back to Customers
-        </Link>
-
-        {/* Header */}
-        <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">
-              Customer ID: {customer.id}
-            </p>
-
-            <h1 className="mt-1 text-3xl font-bold text-slate-950">
-              {customer.name}
-            </h1>
-
-            <p className="mt-2 text-slate-600">
-              Customer profile and account information.
-            </p>
-          </div>
-
-          <span
-            className={`inline-flex w-fit rounded-full px-4 py-2 text-sm font-semibold ${
-              customer.status === "Active"
-                ? "bg-green-100 text-green-700"
-                : "bg-red-100 text-red-700"
-            }`}
-          >
-            {customer.status}
+    <>
+      <PageHeader
+        crumbs={[{ label: "Customers", href: "/customers" }, { label: c.name }]}
+        title={
+          <span className="flex items-center gap-3">
+            <Avatar name={c.name} size={40} />
+            {c.name}
           </span>
-        </div>
+        }
+        badge={<StatusBadge status={c.status} />}
+        description={`${c.id} · joined ${fmtDate(c.joined)}`}
+      />
 
-        {/* Contact information */}
-        <section className="mt-8 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          <div className="border-b border-slate-200 px-6 py-5">
-            <h2 className="text-lg font-semibold text-slate-950">
-              Customer Information
-            </h2>
+      <DetailLayout
+        main={
+          <>
+            <Card title="Profile" description="Verified fields come from PAN and KYC providers. Contact fields are customer provided.">
+              <DefList
+                cols={3}
+                items={[
+                  { label: "Phone", value: c.phone },
+                  { label: "Email", value: c.email },
+                  { label: "City", value: c.city },
+                  { label: "Date of birth", value: fmtDate(c.dob) },
+                  { label: "PAN", value: c.pan },
+                  { label: "Primary device", value: c.device },
+                ]}
+              />
+            </Card>
 
-            <p className="mt-1 text-sm text-slate-500">
-              Basic customer details.
-            </p>
-          </div>
+            <Card title="Applications" flush>
+              <DataTable columns={appCols} rows={myApps} rowKey={(a) => a.id} rowHref={(a) => `/applications/${a.id}`} empty={<p className="px-5 py-8 text-center text-sm text-muted">No applications yet.</p>} />
+            </Card>
 
-          <dl className="grid gap-6 px-6 py-6 sm:grid-cols-2">
-            <div>
-              <dt className="text-sm font-medium text-slate-500">
-                Full Name
-              </dt>
-              <dd className="mt-1 text-base text-slate-950">
-                {customer.name}
-              </dd>
-            </div>
+            <Card title="Loan history" flush>
+              <DataTable columns={loanCols} rows={myLoans} rowKey={(l) => l.id} rowHref={(l) => `/loans/${l.id}`} empty={<p className="px-5 py-8 text-center text-sm text-muted">No loans yet.</p>} />
+            </Card>
 
-            <div>
-              <dt className="text-sm font-medium text-slate-500">
-                Customer ID
-              </dt>
-              <dd className="mt-1 text-base text-slate-950">
-                {customer.id}
-              </dd>
-            </div>
+            <Card title="Support and complaints">
+              {myTickets.length + myComplaints.length === 0 ? (
+                <p className="text-sm text-muted">Nothing raised by this customer.</p>
+              ) : (
+                <Timeline
+                  items={[
+                    ...myTickets.map((t) => ({ title: <Link href={`/support/${t.id}`} className="hover:text-brand-700">{t.id} · {t.subject}</Link>, meta: `Ticket · ${fmtDateTime(t.created)}`, tone: "brand" as const })),
+                    ...myComplaints.map((x) => ({ title: <Link href={`/complaints/${x.id}`} className="hover:text-brand-700">{x.id} · {x.subject}</Link>, meta: `Complaint · ${fmtDate(x.received)}`, tone: "warn" as const })),
+                  ]}
+                />
+              )}
+            </Card>
+          </>
+        }
+        side={
+          <>
+            <Card title="Standing">
+              <DefList
+                cols={2}
+                items={[
+                  { label: "Loan level", value: c.level },
+                  { label: "Outstanding", value: outstanding ? inr(outstanding) : "None" },
+                  { label: "KYC", value: <StatusBadge status={c.kyc} /> },
+                  { label: "Loans taken", value: myLoans.length },
+                ]}
+              />
+              {kyc && (
+                <Link href={`/kyc/${kyc.id}`} className="mt-4 block text-sm font-medium text-brand-700 hover:underline">
+                  Open KYC record {kyc.id}
+                </Link>
+              )}
+            </Card>
 
-            <div>
-              <dt className="text-sm font-medium text-slate-500">Phone</dt>
-              <dd className="mt-1 text-base text-slate-950">
-                <a
-                  href={`tel:${customer.phone}`}
-                  className="hover:text-slate-700"
-                >
-                  {customer.phone}
-                </a>
-              </dd>
-            </div>
-
-            <div>
-              <dt className="text-sm font-medium text-slate-500">Email</dt>
-              <dd className="mt-1 text-base text-slate-950">
-                <a
-                  href={`mailto:${customer.email}`}
-                  className="hover:text-slate-700"
-                >
-                  {customer.email}
-                </a>
-              </dd>
-            </div>
-
-            <div>
-              <dt className="text-sm font-medium text-slate-500">
-                Joined Date
-              </dt>
-              <dd className="mt-1 text-base text-slate-950">
-                {formatDate(customer.joinedDate)}
-              </dd>
-            </div>
-
-            <div>
-              <dt className="text-sm font-medium text-slate-500">Address</dt>
-              <dd className="mt-1 text-base text-slate-950">
-                {customer.address}
-              </dd>
-            </div>
-          </dl>
-        </section>
-
-        {/* Account overview */}
-        <section className="mt-6 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          <div className="border-b border-slate-200 px-6 py-5">
-            <h2 className="text-lg font-semibold text-slate-950">
-              Account Overview
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Summary of the customer&apos;s lending activity.
-            </p>
-          </div>
-
-          <div className="grid gap-4 p-6 sm:grid-cols-3">
-            <div className="rounded-xl bg-slate-50 p-5">
-              <p className="text-sm font-medium text-slate-500">
-                Account Status
-              </p>
-
-              <p className="mt-2 text-xl font-bold text-slate-950">
-                {customer.status}
-              </p>
-            </div>
-
-            <div className="rounded-xl bg-slate-50 p-5">
-              <p className="text-sm font-medium text-slate-500">
-                Total Loans
-              </p>
-
-              <p className="mt-2 text-xl font-bold text-slate-950">
-                {customer.totalLoans}
-              </p>
-            </div>
-
-            <div className="rounded-xl bg-slate-50 p-5">
-              <p className="text-sm font-medium text-slate-500">
-                Outstanding Amount
-              </p>
-
-              <p className="mt-2 text-xl font-bold text-slate-950">
-                {formatCurrency(customer.outstandingAmount)}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Actions */}
-        <section className="mt-6 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          <div className="border-b border-slate-200 px-6 py-5">
-            <h2 className="text-lg font-semibold text-slate-950">
-              Actions
-            </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              Available customer actions will be connected to the backend
-              later.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-3 p-6">
-            <button
-              type="button"
-              disabled
-              className="cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400"
-            >
-              View Loans — Coming soon
-            </button>
-
-            <button
-              type="button"
-              disabled
-              className="cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400"
-            >
-              View Payments — Coming soon
-            </button>
-
-            <button
-              type="button"
-              disabled
-              className="cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400"
-            >
-              View Activity — Coming soon
-            </button>
-          </div>
-        </section>
-      </div>
-    </main>
+            {(overdue || fraud.length > 0) && (
+              <Card title="Needs attention">
+                <ul className="space-y-3 text-sm">
+                  {overdue && (
+                    <li className="wrap-any text-bad">
+                      <Link href={`/loans/${overdue.id}`} className="font-medium hover:underline">{overdue.id}</Link> is {overdue.dpd} days past due ({inr(overdue.outstanding)} outstanding).
+                    </li>
+                  )}
+                  {fraud.map((f) => (
+                    <li key={f.id} className="wrap-any text-warn">
+                      Open fraud case <Link href={`/fraud/${f.id}`} className="font-medium hover:underline">{f.id}</Link>.
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+          </>
+        }
+      />
+    </>
   );
 }

@@ -1,283 +1,112 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import {
-  approvalTrend,
-  dpdBuckets,
-  providerFailures,
-  reportMetrics,
-  reportTable,
-} from "./reportsData";
+import { Button, Card, DataTable, type Column, Grid, PageHeader, Stat, StatusBadge } from "@/components/ui";
+import { Icon } from "@/components/Icon";
+import { dpdBuckets, providerHealth, reportMonths, riskDistribution } from "@/lib/mock";
+import { inr } from "@/lib/format";
+
+type Health = (typeof providerHealth)[number];
 
 export default function ReportsPage() {
-  const [period, setPeriod] = useState("Last 6 months");
+  const latest = reportMonths[reportMonths.length - 1];
+  const approval = Math.round((latest.approved / latest.applications) * 100);
+  const maxApps = Math.max(...reportMonths.map((m) => m.applications));
+  const maxDisb = Math.max(...reportMonths.map((m) => m.disbursed));
+  const maxBucket = Math.max(...dpdBuckets.map((b) => b.amount));
 
-  const maxApproval = Math.max(...approvalTrend.map((item) => item.value));
-  const maxDpd = Math.max(...dpdBuckets.map((item) => item.value));
-  const maxProviderFailure = Math.max(
-    ...providerFailures.map((item) => item.value),
-  );
-
-  const periodLabel = useMemo(() => {
-    return period === "Last 30 days"
-      ? "Last 30 days"
-      : period === "Last 90 days"
-        ? "Last 90 days"
-        : "Last 6 months";
-  }, [period]);
-
-  function exportReport() {
-    const header = "Metric,Value";
-    const rows = reportTable.map(
-      (row) =>
-        `"${row.label.replace(/"/g, '""')}","${row.value.replace(/"/g, '""')}"`,
-    );
-
-    const csv = [header, ...rows].join("\n");
-    const blob = new Blob([csv], {
-      type: "text/csv;charset=utf-8;",
-    });
-
+  function exportCsv() {
+    const header = "Month,Applications,Approved,Disbursed (INR)";
+    const lines = reportMonths.map((m) => `${m.month},${m.applications},${m.approved},${m.disbursed}`);
+    const blob = new Blob([[header, ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = "inpockets-report.csv";
-    link.click();
-
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "inpockets-monthly-report.csv";
+    a.click();
     URL.revokeObjectURL(url);
   }
 
+  const healthCols: Column<Health>[] = [
+    { key: "n", header: "Provider", render: (p) => <span className="font-medium text-ink">{p.name}</span> },
+    { key: "s", header: "Status", render: (p) => <StatusBadge status={p.status === "OK" ? "ACTIVE" : "AT_RISK"} /> },
+    { key: "f", header: "Failures (24h)", align: "right", render: (p) => <span className="num">{p.failures}</span> },
+    { key: "p", header: "p95 latency", align: "right", render: (p) => <span className="num">{p.p95}</span> },
+  ];
+
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">
-              Analytics & Reporting
-            </p>
+    <>
+      <PageHeader title="Reports" description="Sandbox figures. In production these come from the reporting jobs, with no personal data exposed." actions={<Button onClick={exportCsv}><Icon name="download" size={16} />Export CSV</Button>} />
 
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-              Reports
-            </h1>
+      <Grid cols={4} className="mb-6">
+        <Stat label={`Applications in ${latest.month}`} value={latest.applications} />
+        <Stat label="Approval rate" value={`${approval}%`} hint="Approved of decided" />
+        <Stat label="Disbursed this month" value={inr(latest.disbursed)} />
+        <Stat label="Manual review share" value="46%" hint="Of applications this month" />
+      </Grid>
 
-            <p className="mt-2 text-slate-600">
-              Review operational, lending, and provider performance metrics.
-            </p>
+      <div className="mb-6 grid grid-cols-2 gap-6">
+        <Card title="Applications and approvals" description="By month">
+          <div className="flex h-48 items-end gap-5" role="img" aria-label="Applications and approvals by month">
+            {reportMonths.map((m) => (
+              <div key={m.month} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                <div className="flex h-40 w-full items-end justify-center gap-1.5">
+                  <div className="w-1/2 max-w-6 rounded-t bg-brand-200" style={{ height: `${(m.applications / maxApps) * 100}%` }} title={`${m.applications} applications`} />
+                  <div className="w-1/2 max-w-6 rounded-t bg-brand-600" style={{ height: `${(m.approved / maxApps) * 100}%` }} title={`${m.approved} approved`} />
+                </div>
+                <span className="text-xs text-muted">{m.month}</span>
+              </div>
+            ))}
           </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div>
-              <label
-                htmlFor="report-period"
-                className="mb-1 block text-xs font-medium text-slate-500"
-              >
-                Period
-              </label>
-
-              <select
-                id="report-period"
-                value={period}
-                onChange={(event) => setPeriod(event.target.value)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
-              >
-                <option>Last 30 days</option>
-                <option>Last 90 days</option>
-                <option>Last 6 months</option>
-              </select>
-            </div>
-
-            <button
-              type="button"
-              onClick={exportReport}
-              className="self-end rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-            >
-              Export CSV
-            </button>
+          <div className="mt-3 flex gap-5 text-xs text-muted">
+            <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-brand-200" />Applications</span>
+            <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-brand-600" />Approved</span>
           </div>
-        </div>
+        </Card>
 
-        <p className="mb-5 text-sm text-slate-500">
-          Showing mock reporting data for {periodLabel}.
-        </p>
-
-        <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-          {reportMetrics.map((metric) => (
-            <article
-              key={metric.label}
-              className="rounded-xl border border-slate-200 bg-white p-6"
-            >
-              <p className="text-sm font-medium text-slate-600">
-                {metric.label}
-              </p>
-
-              <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-                {metric.value}
-              </p>
-
-              <p className="mt-3 text-sm leading-6 text-slate-500">
-                {metric.description}
-              </p>
-            </article>
-          ))}
-        </section>
-
-        <section className="mt-6 grid gap-6 lg:grid-cols-2">
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold text-slate-950">
-                Approval Rate Trend
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Monthly approval rate during the selected reporting period.
-              </p>
-            </div>
-
-            <div className="flex h-64 items-end gap-4 border-b border-slate-200 px-2 pb-0">
-              {approvalTrend.map((point) => (
-                <div
-                  key={point.label}
-                  className="flex h-full flex-1 flex-col items-center justify-end"
-                >
-                  <span className="mb-2 text-xs font-medium text-slate-600">
-                    {point.value}%
-                  </span>
-
-                  <div
-                    className="w-full max-w-12 rounded-t-md bg-slate-800"
-                    style={{
-                      height: `${(point.value / maxApproval) * 78}%`,
-                    }}
-                  />
-
-                  <span className="mt-3 text-xs text-slate-500">
-                    {point.label}
-                  </span>
+        <Card title="Disbursed amount" description="By month">
+          <div className="flex h-48 items-end gap-5" role="img" aria-label="Disbursed amount by month">
+            {reportMonths.map((m) => (
+              <div key={m.month} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                <span className="num text-[11px] text-muted">{Math.round(m.disbursed / 1000)}k</span>
+                <div className="flex h-32 w-full items-end justify-center">
+                  <div className="w-full max-w-10 rounded-t bg-brand-500" style={{ height: `${(m.disbursed / maxDisb) * 100}%` }} />
                 </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold text-slate-950">
-                DPD Buckets
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Accounts grouped by days past due.
-              </p>
-            </div>
-
-            <div className="space-y-5">
-              {dpdBuckets.map((point) => (
-                <div key={point.label}>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-700">
-                      {point.label}
-                    </span>
-
-                    <span className="text-sm text-slate-500">
-                      {point.value}
-                    </span>
-                  </div>
-
-                  <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-slate-700"
-                      style={{
-                        width: `${(point.value / maxDpd) * 100}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </article>
-        </section>
-
-        <section className="mt-6 grid gap-6 lg:grid-cols-2">
-          <article className="rounded-xl border border-slate-200 bg-white p-6">
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold text-slate-950">
-                Provider Failure Rates
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Failed external-provider requests by provider.
-              </p>
-            </div>
-
-            <div className="space-y-5">
-              {providerFailures.map((point) => (
-                <div key={point.label}>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-700">
-                      {point.label}
-                    </span>
-
-                    <span className="text-sm text-slate-500">
-                      {point.value}%
-                    </span>
-                  </div>
-
-                  <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-slate-700"
-                      style={{
-                        width: `${(point.value / maxProviderFailure) * 100}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </article>
-
-          <article className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 px-6 py-5">
-              <h2 className="text-lg font-semibold text-slate-950">
-                Report Summary
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Exportable reporting metrics.
-              </p>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Metric
-                    </th>
-
-                    <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Value
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-200">
-                  {reportTable.map((row) => (
-                    <tr key={row.label} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 text-sm font-medium text-slate-900">
-                        {row.label}
-                      </td>
-
-                      <td className="px-6 py-4 text-right text-sm text-slate-600">
-                        {row.value}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </article>
-        </section>
+                <span className="text-xs text-muted">{m.month}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
-    </main>
+
+      <div className="mb-6 grid grid-cols-2 gap-6">
+        <Card title="Overdue by days past due" description="Outstanding amount per bucket">
+          <ul className="space-y-4">
+            {dpdBuckets.map((b) => (
+              <li key={b.label} className="grid grid-cols-[96px_minmax(0,1fr)_150px] items-center gap-4 text-sm">
+                <span className="text-body">{b.label}</span>
+                <span className="h-2 overflow-hidden rounded-full bg-brand-100"><span className={`block h-full rounded-full ${b.label === "Current" ? "bg-brand-500" : "bg-[#e39a2d]"}`} style={{ width: `${(b.amount / maxBucket) * 100}%` }} /></span>
+                <span className="num text-right text-muted">{inr(b.amount)} · {b.loans} loans</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+
+        <Card title="Risk distribution" description="Share of assessed applications">
+          <ul className="space-y-4">
+            {riskDistribution.map((r) => (
+              <li key={r.band} className="grid grid-cols-[96px_minmax(0,1fr)_48px] items-center gap-4 text-sm">
+                <span className="text-body">{r.band}</span>
+                <span className="h-2 overflow-hidden rounded-full bg-brand-100"><span className={`block h-full rounded-full ${r.band === "Low" ? "bg-ok" : r.band === "Medium" ? "bg-[#e39a2d]" : "bg-bad"}`} style={{ width: `${r.share}%` }} /></span>
+                <span className="num text-right text-muted">{r.share}%</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+
+      <Card title="Provider reliability" flush>
+        <DataTable columns={healthCols} rows={providerHealth} rowKey={(p) => p.name} />
+      </Card>
+    </>
   );
 }

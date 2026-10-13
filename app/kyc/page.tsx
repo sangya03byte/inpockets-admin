@@ -1,243 +1,56 @@
 "use client";
 
-import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
-import { kycRecords, KycStatus } from "./kycData";
+import { useMemo, useState } from "react";
+import { Card, DataTable, type Column, PageHeader, Person, SearchField, Segmented, StatusBadge, TableFooter, Toolbar } from "@/components/ui";
+import { customerName, kycRecords, type KycRecord } from "@/lib/mock";
+import { fmtDateTime } from "@/lib/format";
+
+type Filter = "all" | "MANUAL_REVIEW" | "PENDING" | "VERIFIED";
 
 export default function KycPage() {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("All statuses");
-  const [submittedQuery, setSubmittedQuery] = useState("");
-  const [submittedStatus, setSubmittedStatus] = useState("All statuses");
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
 
-  const filteredSubmissions = useMemo(() => {
-    const normalizedQuery = submittedQuery.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    return kycRecords
+      .filter((k) => filter === "all" || k.state === filter)
+      .filter((k) => !term || k.id.toLowerCase().includes(term) || customerName(k.customerId).toLowerCase().includes(term) || k.flag.toLowerCase().includes(term));
+  }, [q, filter]);
 
-    return kycRecords.filter((submission) => {
-      const matchesQuery =
-        normalizedQuery === "" ||
-        submission.kycId.toLowerCase().includes(normalizedQuery) ||
-        submission.customerId.toLowerCase().includes(normalizedQuery) ||
-        submission.customerName.toLowerCase().includes(normalizedQuery);
+  const columns: Column<KycRecord>[] = [
+    { key: "id", header: "KYC record", render: (k) => <span className="num font-medium text-ink">{k.id}</span> },
+    { key: "cus", header: "Customer", minWidth: 200, render: (k) => <Person name={customerName(k.customerId)} sub={k.customerId} /> },
+    { key: "pan", header: "PAN", render: (k) => <StatusBadge status={k.pan} /> },
+    { key: "dl", header: "DigiLocker", render: (k) => <StatusBadge status={k.digilocker} /> },
+    { key: "live", header: "Liveness", render: (k) => <StatusBadge status={k.liveness} /> },
+    { key: "flag", header: "Flag", minWidth: 240, render: (k) => <span className="block truncate text-sm text-body" title={k.flag}>{k.flag}</span> },
+    { key: "state", header: "Overall", render: (k) => <StatusBadge status={k.state} /> },
+    { key: "at", header: "Submitted", render: (k) => <span className="whitespace-nowrap text-muted">{fmtDateTime(k.submitted)}</span> },
+  ];
 
-      const matchesStatus =
-        submittedStatus === "All statuses" ||
-        submission.status === submittedStatus;
-
-      return matchesQuery && matchesStatus;
-    });
-  }, [submittedQuery, submittedStatus]);
-
-  function handleSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    setSubmittedQuery(query);
-    setSubmittedStatus(status);
-  }
-
-  function getStatusClasses(currentStatus: KycStatus) {
-    if (currentStatus === "Manual Review") {
-      return "bg-amber-100 text-amber-700";
-    }
-
-    if (currentStatus === "Pending Provider") {
-      return "bg-blue-100 text-blue-700";
-    }
-
-    return "bg-green-100 text-green-700";
-  }
+  const count = (f: Filter) => (f === "all" ? kycRecords.length : kycRecords.filter((k) => k.state === f).length);
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-10">
-      <div className="mx-auto max-w-7xl">
-        {/* Page Header */}
-        <div className="mb-10">
-          <h1 className="text-4xl font-bold tracking-tight text-slate-950">
-            KYC Review Queue
-          </h1>
-
-          <p className="mt-3 text-lg text-slate-600">
-            Review KYC submissions that require manual verification.
-          </p>
-        </div>
-
-        {/* Search */}
-        <form
-          onSubmit={handleSearch}
-          className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-        >
-          <div className="flex flex-col gap-4 lg:flex-row">
-            <input
-              type="text"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by KYC ID, customer ID, or customer name..."
-              aria-label="Search KYC submissions"
-              className="h-16 flex-1 rounded-xl border border-slate-300 px-5 text-lg text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-            />
-
-            <select
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              aria-label="Filter by KYC status"
-              className="h-16 rounded-xl border border-slate-300 bg-white px-5 text-lg text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 lg:w-72"
-            >
-              <option>All statuses</option>
-              <option>Manual Review</option>
-              <option>Pending Provider</option>
-              <option>Verified</option>
-            </select>
-
-            <button
-              type="submit"
-              className="h-16 rounded-xl bg-slate-950 px-8 text-lg font-semibold text-white transition hover:bg-slate-800"
-            >
-              Search
-            </button>
-          </div>
-        </form>
-
-        {/* Results */}
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-8 py-7">
-            <h2 className="text-2xl font-bold text-slate-950">
-              KYC Submissions
-            </h2>
-
-            <p className="mt-2 text-lg text-slate-500">
-              {filteredSubmissions.length}{" "}
-              {filteredSubmissions.length === 1
-                ? "submission"
-                : "submissions"}{" "}
-              found
-            </p>
-          </div>
-
-          {/* Empty State */}
-          {filteredSubmissions.length === 0 ? (
-            <div className="px-8 py-16 text-center">
-              <h3 className="text-xl font-semibold text-slate-900">
-                No KYC submissions found
-              </h3>
-
-              <p className="mt-2 text-slate-500">
-                Try changing your search or status filter.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px]">
-                <thead className="bg-slate-50">
-                  <tr className="border-b border-slate-200">
-                    <th
-                      scope="col"
-                      className="px-8 py-5 text-left text-base font-semibold text-slate-800"
-                    >
-                      KYC ID
-                    </th>
-
-                    <th
-                      scope="col"
-                      className="px-8 py-5 text-left text-base font-semibold text-slate-800"
-                    >
-                      Customer
-                    </th>
-
-                    <th
-                      scope="col"
-                      className="px-8 py-5 text-left text-base font-semibold text-slate-800"
-                    >
-                      Document
-                    </th>
-
-                    <th
-                      scope="col"
-                      className="px-8 py-5 text-left text-base font-semibold text-slate-800"
-                    >
-                      Provider
-                    </th>
-
-                    <th
-                      scope="col"
-                      className="px-8 py-5 text-left text-base font-semibold text-slate-800"
-                    >
-                      Status
-                    </th>
-
-                    <th
-                      scope="col"
-                      className="px-8 py-5 text-left text-base font-semibold text-slate-800"
-                    >
-                      Flag
-                    </th>
-
-                    <th
-                      scope="col"
-                      className="px-8 py-5 text-left text-base font-semibold text-slate-800"
-                    >
-                      Submitted
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredSubmissions.map((submission) => (
-                    <tr
-                      key={submission.kycId}
-                      className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
-                    >
-                      <td className="px-8 py-6">
-                        <Link
-                          href={`/kyc/${submission.kycId}`}
-                          className="font-semibold text-slate-950 underline-offset-4 hover:underline"
-                        >
-                          {submission.kycId}
-                        </Link>
-                      </td>
-
-                      <td className="px-8 py-6">
-                        <div className="font-medium text-slate-900">
-                          {submission.customerName}
-                        </div>
-
-                        <div className="mt-1 text-sm text-slate-500">
-                          {submission.customerId}
-                        </div>
-                      </td>
-
-                      <td className="px-8 py-6 text-slate-700">
-                        {submission.document}
-                      </td>
-
-                      <td className="px-8 py-6 text-slate-700">
-                        {submission.provider}
-                      </td>
-
-                      <td className="px-8 py-6">
-                        <span
-                          className={`inline-flex rounded-full px-4 py-2 text-sm font-semibold ${getStatusClasses(
-                            submission.status,
-                          )}`}
-                        >
-                          {submission.status}
-                        </span>
-                      </td>
-
-                      <td className="px-8 py-6 text-slate-700">
-                        {submission.flag}
-                      </td>
-
-                      <td className="whitespace-nowrap px-8 py-6 text-slate-500">
-                        {submission.submitted}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
+    <>
+      <PageHeader title="KYC review" description="PAN, DigiLocker and liveness results for each customer. Raw Aadhaar data is never stored or shown." />
+      <Card flush>
+        <Toolbar>
+          <SearchField value={q} onChange={setQ} placeholder="Search customer, record or flag" />
+          <Segmented<Filter>
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: "all", label: "All", count: count("all") },
+              { value: "MANUAL_REVIEW", label: "Manual review", count: count("MANUAL_REVIEW") },
+              { value: "PENDING", label: "Pending", count: count("PENDING") },
+              { value: "VERIFIED", label: "Verified", count: count("VERIFIED") },
+            ]}
+          />
+        </Toolbar>
+        <DataTable columns={columns} rows={rows} rowKey={(k) => k.id} rowHref={(k) => `/kyc/${k.id}`} />
+        <TableFooter shown={rows.length} total={kycRecords.length} noun="KYC records" />
+      </Card>
+    </>
   );
 }

@@ -1,212 +1,66 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
-import { loans } from "./loanData";
+import { Card, DataTable, type Column, PageHeader, Person, SearchField, Segmented, StatusBadge, TableFooter, Toolbar, Stat, Grid } from "@/components/ui";
+import { customerName, loans, type Loan } from "@/lib/mock";
+import { fmtDate, inr } from "@/lib/format";
+
+type Filter = "all" | Loan["status"];
 
 export default function LoansPage() {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
 
-  const filteredLoans = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    return loans
+      .filter((l) => filter === "all" || l.status === filter)
+      .filter((l) => !term || l.id.toLowerCase().includes(term) || customerName(l.customerId).toLowerCase().includes(term));
+  }, [q, filter]);
 
-    return loans.filter((loan) => {
-      const matchesSearch =
-        !query ||
-        loan.id.toLowerCase().includes(query) ||
-        loan.applicationId.toLowerCase().includes(query) ||
-        loan.customer.toLowerCase().includes(query);
+  const book = loans.filter((l) => l.status === "ACTIVE" || l.status === "OVERDUE");
+  const outstanding = book.reduce((s, l) => s + l.outstanding, 0);
+  const overdue = loans.filter((l) => l.status === "OVERDUE");
 
-      const matchesStatus =
-        statusFilter === "All" || loan.status === statusFilter;
+  const columns: Column<Loan>[] = [
+    { key: "id", header: "Loan", render: (l) => <span className="num font-medium text-ink">{l.id}</span> },
+    { key: "cus", header: "Customer", minWidth: 200, render: (l) => <Person name={customerName(l.customerId)} sub={l.customerId} /> },
+    { key: "lvl", header: "Level", render: (l) => l.level },
+    { key: "p", header: "Principal", align: "right", render: (l) => <span className="num">{inr(l.principal)}</span> },
+    { key: "o", header: "Outstanding", align: "right", render: (l) => <span className="num font-medium text-ink">{l.outstanding ? inr(l.outstanding) : "—"}</span> },
+    { key: "due", header: "Next due", render: (l) => <span className="whitespace-nowrap text-muted">{fmtDate(l.nextDue)}</span> },
+    { key: "dpd", header: "Days past due", align: "right", render: (l) => <span className={`num ${l.dpd > 0 ? "font-medium text-bad" : "text-faint"}`}>{l.dpd > 0 ? l.dpd : "—"}</span> },
+    { key: "s", header: "Status", render: (l) => <StatusBadge status={l.status} /> },
+  ];
 
-      return matchesSearch && matchesStatus;
-    });
-  }, [search, statusFilter]);
-
-  function formatAmount(amount: number) {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(amount);
-  }
+  const count = (f: Filter) => (f === "all" ? loans.length : loans.filter((l) => l.status === f).length);
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-8">
-          <p className="text-sm font-medium text-slate-500">
-            Loans & Payments
-          </p>
-
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            Loan Monitoring
-          </h1>
-
-          <p className="mt-2 text-slate-600">
-            Review loan status, balances, disbursements, and upcoming dues.
-          </p>
-        </div>
-
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-6 py-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">
-                  Loan Queue
-                </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Current loan records available for monitoring.
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label
-                    htmlFor="loan-search"
-                    className="mb-1 block text-xs font-medium text-slate-500"
-                  >
-                    Search
-                  </label>
-
-                  <input
-                    id="loan-search"
-                    type="text"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Loan, application, customer..."
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-500 sm:w-64"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="loan-status"
-                    className="mb-1 block text-xs font-medium text-slate-500"
-                  >
-                    Status
-                  </label>
-
-                  <select
-                    id="loan-status"
-                    value={statusFilter}
-                    onChange={(event) =>
-                      setStatusFilter(event.target.value)
-                    }
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-500"
-                  >
-                    <option value="All">All</option>
-                    <option value="ACTIVE">ACTIVE</option>
-                    <option value="OVERDUE">OVERDUE</option>
-                    <option value="PENDING_DISBURSEMENT">
-                      PENDING_DISBURSEMENT
-                    </option>
-                    <option value="CLOSED">CLOSED</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {filteredLoans.length === 0 ? (
-            <div className="px-6 py-16 text-center">
-              <h3 className="text-sm font-semibold text-slate-900">
-                No loans found
-              </h3>
-
-              <p className="mt-1 text-sm text-slate-500">
-                Try changing your search or status filter.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1050px] text-left">
-                <thead className="border-b border-slate-200 bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Loan
-                    </th>
-
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Customer
-                    </th>
-
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Status
-                    </th>
-
-                    <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Disbursed
-                    </th>
-
-                    <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Outstanding
-                    </th>
-
-                    <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Next Due
-                    </th>
-
-                    <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-200">
-                  {filteredLoans.map((loan) => (
-                    <tr key={loan.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4">
-                        <p className="text-sm font-medium text-slate-900">
-                          {loan.id}
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-500">
-                          {loan.applicationId}
-                        </p>
-                      </td>
-
-                      <td className="px-6 py-4 text-sm text-slate-900">
-                        {loan.customer}
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                          {loan.status}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-4 text-right text-sm text-slate-700">
-                        {formatAmount(loan.disbursedAmount)}
-                      </td>
-
-                      <td className="px-6 py-4 text-right text-sm text-slate-700">
-                        {formatAmount(loan.outstandingBalance)}
-                      </td>
-
-                      <td className="px-6 py-4 text-sm text-slate-700">
-                        {loan.nextDueDate}
-                      </td>
-
-                      <td className="px-6 py-4 text-right">
-                        <Link
-                          href={`/loans/${loan.id}`}
-                          className="text-sm font-medium text-slate-700 hover:text-slate-950"
-                        >
-                          View →
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
+    <>
+      <PageHeader title="Loans" description="Balances come from the ledger. A loan is only active after a confirmed disbursement." />
+      <Grid cols={3} className="mb-6">
+        <Stat label="Active book" value={book.length} hint="Loans with money outstanding" />
+        <Stat label="Outstanding principal and interest" value={inr(outstanding)} />
+        <Stat label="Overdue" value={overdue.length} hint={`${inr(overdue.reduce((s, l) => s + l.outstanding, 0))} outstanding`} tone="bad" />
+      </Grid>
+      <Card flush>
+        <Toolbar>
+          <SearchField value={q} onChange={setQ} placeholder="Search loan or customer" />
+          <Segmented<Filter>
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: "all", label: "All", count: count("all") },
+              { value: "ACTIVE", label: "Active", count: count("ACTIVE") },
+              { value: "OVERDUE", label: "Overdue", count: count("OVERDUE") },
+              { value: "PENDING_DISBURSEMENT", label: "Pending payout", count: count("PENDING_DISBURSEMENT") },
+              { value: "CLOSED", label: "Closed", count: count("CLOSED") },
+            ]}
+          />
+        </Toolbar>
+        <DataTable columns={columns} rows={rows} rowKey={(l) => l.id} rowHref={(l) => `/loans/${l.id}`} />
+        <TableFooter shown={rows.length} total={loans.length} noun="loans" />
+      </Card>
+    </>
   );
 }

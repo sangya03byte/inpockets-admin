@@ -1,179 +1,55 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { reconciliationRecords } from "./reconciliationData";
+import { Card, DataTable, type Column, PageHeader, Segmented, StatusBadge, TableFooter, Toolbar, Stat, Grid } from "@/components/ui";
+import { reconciliations, type Reconciliation } from "@/lib/mock";
+import { fmtDate, inr } from "@/lib/format";
+
+type Filter = "all" | Reconciliation["status"];
 
 export default function ReconciliationPage() {
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("ALL");
+  const [filter, setFilter] = useState<Filter>("all");
+  const rows = useMemo(() => reconciliations.filter((r) => filter === "all" || r.status === filter), [filter]);
+  const count = (f: Filter) => (f === "all" ? reconciliations.length : reconciliations.filter((r) => r.status === f).length);
 
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  const gap = (r: Reconciliation) => Math.max(Math.abs(r.ledger - r.provider), Math.abs(r.provider - r.bank));
+  const unmatched = reconciliations.filter((r) => r.status === "MISMATCH");
 
-    return reconciliationRecords.filter((record) => {
-      const matchesSearch =
-        !query ||
-        record.id.toLowerCase().includes(query) ||
-        record.transactionId.toLowerCase().includes(query);
-
-      const matchesStatus =
-        status === "ALL" || record.status === status;
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [search, status]);
+  const columns: Column<Reconciliation>[] = [
+    { key: "id", header: "Record", render: (r) => <span className="num font-medium text-ink">{r.id}</span> },
+    { key: "txn", header: "Transaction", render: (r) => (<div><p className="num text-ink">{r.txnId}</p><p className="text-xs text-muted">{r.type === "DISBURSEMENT" ? "Payout" : "Repayment"}</p></div>) },
+    { key: "l", header: "Our ledger", align: "right", render: (r) => <span className="num">{inr(r.ledger)}</span> },
+    { key: "p", header: "Provider", align: "right", render: (r) => <span className="num">{inr(r.provider)}</span> },
+    { key: "b", header: "Bank", align: "right", render: (r) => <span className="num">{inr(r.bank)}</span> },
+    { key: "g", header: "Largest gap", align: "right", render: (r) => <span className={`num ${gap(r) ? "font-medium text-bad" : "text-faint"}`}>{gap(r) ? inr(gap(r)) : "—"}</span> },
+    { key: "s", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
+    { key: "d", header: "Date", render: (r) => <span className="whitespace-nowrap text-muted">{fmtDate(r.date)}</span> },
+  ];
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-8 text-slate-950">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-8">
-          <p className="text-sm font-medium text-slate-500">
-            Loans & Payments
-          </p>
-
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            Reconciliation
-          </h1>
-
-          <p className="mt-2 text-slate-600">
-            Review differences between the internal ledger, provider, and
-            bank records.
-          </p>
-        </div>
-
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 p-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="reconciliation-search"
-                  className="block text-sm font-medium text-slate-700"
-                >
-                  Search
-                </label>
-
-                <input
-                  id="reconciliation-search"
-                  type="text"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Record or transaction ID..."
-                  className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-500"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="reconciliation-status"
-                  className="block text-sm font-medium text-slate-700"
-                >
-                  Match Status
-                </label>
-
-                <select
-                  id="reconciliation-status"
-                  value={status}
-                  onChange={(event) => setStatus(event.target.value)}
-                  className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
-                >
-                  <option value="ALL">All</option>
-                  <option value="MATCHED">Matched</option>
-                  <option value="MISMATCH">Mismatch</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="border-b border-slate-200 bg-slate-50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Record
-                  </th>
-
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Type
-                  </th>
-
-                  <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Our Ledger
-                  </th>
-
-                  <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Provider
-                  </th>
-
-                  <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Bank
-                  </th>
-
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Status
-                  </th>
-
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Date
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-200">
-                {filteredRecords.map((record) => (
-                  <tr key={record.id} className="hover:bg-slate-50">
-                    <td className="px-6 py-5">
-                      <p className="font-medium text-slate-950">
-                        {record.id}
-                      </p>
-
-                      <p className="mt-1 text-sm text-slate-500">
-                        {record.transactionId}
-                      </p>
-                    </td>
-
-                    <td className="px-6 py-5 text-sm text-slate-700">
-                      {record.type}
-                    </td>
-
-                    <td className="px-6 py-5 text-right text-sm text-slate-700">
-                      ₹{record.ourLedgerAmount.toLocaleString("en-IN")}
-                    </td>
-
-                    <td className="px-6 py-5 text-right text-sm text-slate-700">
-                      ₹{record.providerAmount.toLocaleString("en-IN")}
-                    </td>
-
-                    <td className="px-6 py-5 text-right text-sm text-slate-700">
-                      ₹{record.bankAmount.toLocaleString("en-IN")}
-                    </td>
-
-                    <td className="px-6 py-5">
-                      <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                        {record.status}
-                      </span>
-                    </td>
-
-                    <td className="px-6 py-5 text-sm text-slate-600">
-                      {record.date}
-                    </td>
-                  </tr>
-                ))}
-
-                {filteredRecords.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-6 py-12 text-center text-sm text-slate-500"
-                    >
-                      No reconciliation records match the selected filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </main>
+    <>
+      <PageHeader title="Reconciliation" description="Our ledger, the payment provider and the bank statement must agree on every transaction." />
+      <Grid cols={3} className="mb-6">
+        <Stat label="Matched" value={reconciliations.filter((r) => r.status === "MATCHED").length} tone="ok" hint="All three sources agree" />
+        <Stat label="Breaks to investigate" value={unmatched.length} tone={unmatched.length ? "warn" : "ok"} hint={unmatched.length ? "Do not retry affected payouts" : "Nothing open"} />
+        <Stat label="Value at risk" value={inr(unmatched.reduce((s, r) => s + gap(r), 0))} hint="Sum of largest gaps" />
+      </Grid>
+      <Card flush>
+        <Toolbar>
+          <Segmented<Filter>
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: "all", label: "All", count: count("all") },
+              { value: "MISMATCH", label: "Mismatch", count: count("MISMATCH") },
+              { value: "MATCHED", label: "Matched", count: count("MATCHED") },
+              { value: "RESOLVED", label: "Resolved", count: count("RESOLVED") },
+            ]}
+          />
+        </Toolbar>
+        <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} rowHref={(r) => `/reconciliation/${r.id}`} />
+        <TableFooter shown={rows.length} total={reconciliations.length} noun="records" />
+      </Card>
+    </>
   );
 }

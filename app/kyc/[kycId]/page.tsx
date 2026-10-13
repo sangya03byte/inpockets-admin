@@ -1,210 +1,121 @@
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { kycRecords } from "../kycData";
+import { useParams } from "next/navigation";
+import { useState } from "react";
+import { Button, Card, DefList, DetailLayout, Meter, NotFoundState, Notice, PageHeader, ReasonDialog, StatusBadge, type Tone } from "@/components/ui";
+import { customerName, getCustomer, getKyc, type KycRecord } from "@/lib/mock";
+import { fmtDateTime, humanize } from "@/lib/format";
 
-type KycDetailPageProps = {
-  params: Promise<{
-    kycId: string;
-  }>;
-};
+type Action = "verify" | "fail" | "retry" | null;
 
-export default async function KycDetailPage({
-  params,
-}: KycDetailPageProps) {
-  const { kycId } = await params;
+export default function KycDetailPage() {
+  const { kycId } = useParams<{ kycId: string }>();
+  const base = getKyc(kycId);
+  const [state, setState] = useState<KycRecord["state"] | null>(null);
+  const [action, setAction] = useState<Action>(null);
+  const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null);
 
-  const kycRecord = kycRecords.find(
-    (record) => record.kycId.toLowerCase() === kycId.toLowerCase(),
-  );
+  if (!base) return <NotFoundState what="KYC record" backHref="/kyc" backLabel="Back to KYC review" />;
 
-  if (!kycRecord) {
-    notFound();
-  }
+  const k: KycRecord = { ...base, state: state ?? base.state };
+  const customer = getCustomer(k.customerId);
+  const open = k.state === "MANUAL_REVIEW";
 
-  const statusClasses =
-    kycRecord.status === "Manual Review"
-      ? "bg-amber-100 text-amber-700"
-      : kycRecord.status === "Pending Provider"
-        ? "bg-blue-100 text-blue-700"
-        : "bg-green-100 text-green-700";
+  const finish = (next: KycRecord["state"], text: string, tone: Tone) => {
+    setState(next);
+    setNotice({ tone, text });
+    setAction(null);
+  };
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-10">
-      <div className="mx-auto max-w-6xl">
-        {/* Back navigation */}
-        <Link
-          href="/kyc"
-          className="mb-6 inline-flex items-center text-sm font-semibold text-slate-600 hover:text-slate-950"
-        >
-          ← Back to KYC Queue
-        </Link>
+    <>
+      <PageHeader
+        crumbs={[{ label: "KYC review", href: "/kyc" }, { label: k.id }]}
+        title={k.id}
+        badge={<StatusBadge status={k.state} />}
+        description={`${customerName(k.customerId)} · submitted ${fmtDateTime(k.submitted)}`}
+      />
+      {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
 
-        {/* Header */}
-        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              KYC Review
-            </p>
+      <DetailLayout
+        main={
+          <>
+            <Card title="Verification steps" description="Each step is verified separately, then combined into the overall result.">
+              <ul className="divide-y divide-line">
+                {[
+                  { name: "PAN verification", status: k.pan, detail: "Name and date of birth checked against the PAN provider." },
+                  { name: "DigiLocker identity", status: k.digilocker, detail: `Provider: ${k.provider}. Only the verified fields are kept.` },
+                  { name: "Liveness check", status: k.liveness, detail: "Live camera capture checked for presence and spoofing." },
+                ].map((s) => (
+                  <li key={s.name} className="flex items-center justify-between gap-6 py-3.5 first:pt-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-ink">{s.name}</p>
+                      <p className="wrap-any text-xs text-muted">{s.detail}</p>
+                    </div>
+                    <StatusBadge status={s.status} />
+                  </li>
+                ))}
+              </ul>
+            </Card>
 
-            <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-950">
-              {kycRecord.kycId}
-            </h1>
-
-            <p className="mt-2 text-lg text-slate-600">
-              Review KYC information and verification status.
-            </p>
-          </div>
-
-          <span
-            className={`inline-flex w-fit rounded-full px-4 py-2 text-sm font-semibold ${statusClasses}`}
-          >
-            {kycRecord.status}
-          </span>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* Main information */}
-          <div className="space-y-6 lg:col-span-2">
-            {/* Customer Information */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-              <h2 className="text-xl font-bold text-slate-950">
-                Customer Information
-              </h2>
-
-              <dl className="mt-6 grid gap-6 sm:grid-cols-2">
-                <div>
-                  <dt className="text-sm text-slate-500">Customer ID</dt>
-                  <dd className="mt-1 font-semibold text-slate-900">
-                    {kycRecord.customerId}
-                  </dd>
+            <Card title="Face match">
+              {k.faceMatch === null ? (
+                <p className="text-sm text-muted">Not available yet. Face matching runs after liveness passes.</p>
+              ) : (
+                <div className="max-w-md">
+                  <div className="mb-2 flex items-baseline justify-between">
+                    <p className="num font-display text-3xl font-semibold text-ink">{k.faceMatch}%</p>
+                    <p className="text-xs text-muted">Auto-approve confidence is set by the provider</p>
+                  </div>
+                  <Meter value={k.faceMatch} tone={k.faceMatch >= 90 ? "ok" : k.faceMatch >= 80 ? "warn" : "bad"} label="Face match confidence" />
                 </div>
+              )}
+            </Card>
 
-                <div>
-                  <dt className="text-sm text-slate-500">Customer Name</dt>
-                  <dd className="mt-1 font-semibold text-slate-900">
-                    {kycRecord.customerName}
-                  </dd>
+            <Card title="Why this needs a person">
+              <p className="wrap-any text-sm text-body">{k.flag === "None" ? "No exceptions were raised for this record." : k.flag}</p>
+              <DefList
+                cols={3}
+                items={[
+                  { label: "Attempts", value: k.attempts },
+                  { label: "Provider", value: k.provider },
+                  { label: "Overall state", value: humanize(k.state) },
+                ]}
+              />
+            </Card>
+          </>
+        }
+        side={
+          <>
+            <Card title="Customer">
+              <DefList
+                cols={1}
+                items={[
+                  { label: "Name", value: <Link href={`/customers/${k.customerId}`} className="text-brand-700 hover:underline">{customerName(k.customerId)}</Link> },
+                  { label: "PAN (masked)", value: customer?.pan },
+                  { label: "Date of birth", value: customer?.dob },
+                ]}
+              />
+            </Card>
+            <Card title="Decision">
+              {open ? (
+                <div className="space-y-2">
+                  <Button variant="primary" className="w-full" onClick={() => setAction("verify")}>Mark as verified</Button>
+                  <Button className="w-full" onClick={() => setAction("retry")}>Ask customer to retry</Button>
+                  <Button variant="danger" className="w-full" onClick={() => setAction("fail")}>Mark as failed</Button>
                 </div>
-              </dl>
-            </section>
+              ) : (
+                <p className="text-sm text-muted">{k.state === "VERIFIED" ? "This record is verified. No action needed." : "Waiting for the provider. Actions unlock if it needs manual review."}</p>
+              )}
+            </Card>
+          </>
+        }
+      />
 
-            {/* KYC Information */}
-            <section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-              <h2 className="text-xl font-bold text-slate-950">
-                KYC Information
-              </h2>
-
-              <dl className="mt-6 grid gap-6 sm:grid-cols-2">
-                <div>
-                  <dt className="text-sm text-slate-500">Document Type</dt>
-                  <dd className="mt-1 font-semibold text-slate-900">
-                    {kycRecord.document}
-                  </dd>
-                </div>
-
-                <div>
-                  <dt className="text-sm text-slate-500">
-                    Document Number
-                  </dt>
-                  <dd className="mt-1 font-semibold text-slate-900">
-                    {kycRecord.documentNumber}
-                  </dd>
-                </div>
-
-                <div>
-                  <dt className="text-sm text-slate-500">
-                    Verification Provider
-                  </dt>
-                  <dd className="mt-1 font-semibold text-slate-900">
-                    {kycRecord.provider}
-                  </dd>
-                </div>
-
-                <div>
-                  <dt className="text-sm text-slate-500">
-                    Verification Attempts
-                  </dt>
-                  <dd className="mt-1 font-semibold text-slate-900">
-                    {kycRecord.verificationAttempts}
-                  </dd>
-                </div>
-
-                <div>
-                  <dt className="text-sm text-slate-500">Submitted</dt>
-                  <dd className="mt-1 font-semibold text-slate-900">
-                    {kycRecord.submitted}
-                  </dd>
-                </div>
-              </dl>
-            </section>
-
-            {/* Review Flag */}
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-7">
-              <h2 className="text-xl font-bold text-slate-950">
-                Review Flag
-              </h2>
-
-              <p className="mt-3 text-slate-700">
-                This submission requires attention because of:
-              </p>
-
-              <div className="mt-4 rounded-xl border border-amber-200 bg-white px-5 py-4">
-                <p className="font-semibold text-amber-800">
-                  {kycRecord.flag}
-                </p>
-              </div>
-            </section>
-          </div>
-
-          {/* Review Actions */}
-          <aside>
-            <section className="sticky top-6 rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-              <h2 className="text-xl font-bold text-slate-950">
-                Review Actions
-              </h2>
-
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                Review actions will be connected to the backend once the KYC
-                review API is available.
-              </p>
-
-              <div className="mt-6 space-y-3">
-                <button
-                  type="button"
-                  disabled
-                  className="w-full cursor-not-allowed rounded-xl bg-slate-200 px-5 py-3 font-semibold text-slate-500"
-                >
-                  Approve KYC
-                </button>
-
-                <button
-                  type="button"
-                  disabled
-                  className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-5 py-3 font-semibold text-slate-400"
-                >
-                  Reject KYC
-                </button>
-
-                <button
-                  type="button"
-                  disabled
-                  className="w-full cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-5 py-3 font-semibold text-slate-400"
-                >
-                  Request Re-verification
-                </button>
-              </div>
-
-              <div className="mt-6 border-t border-slate-200 pt-6">
-                <p className="text-xs leading-5 text-slate-500">
-                  These actions are intentionally disabled until backend
-                  integration is available. Consequential actions will
-                  require a reason and audit event.
-                </p>
-              </div>
-            </section>
-          </aside>
-        </div>
-      </div>
-    </main>
+      <ReasonDialog open={action === "verify"} title="Mark KYC as verified" description="Use only when documents were checked and the mismatch is explained." confirmLabel="Mark verified" tone="success" reasonLabel="What did you check?" onClose={() => setAction(null)} onConfirm={() => finish("VERIFIED", `${k.id} marked verified. Logged with your reason.`, "ok")} />
+      <ReasonDialog open={action === "retry"} title="Ask customer to retry" confirmLabel="Send retry request" reasonLabel="What should the customer fix?" onClose={() => setAction(null)} onConfirm={() => finish("PENDING", `Retry requested for ${k.id}. The customer is notified in the app.`, "brand")} />
+      <ReasonDialog open={action === "fail"} title="Mark KYC as failed" description="The customer cannot continue to a loan until KYC passes." confirmLabel="Mark failed" tone="danger" reasonLabel="Reason" onClose={() => setAction(null)} onConfirm={() => finish("FAILED", `${k.id} marked failed.`, "bad")} />
+    </>
   );
 }

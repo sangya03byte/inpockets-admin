@@ -1,119 +1,96 @@
 "use client";
 
+import Link from "next/link";
 import { type FormEvent, useState } from "react";
+import { Button, inputClass } from "@/components/ui";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
     setError("");
-
-    if (!email || !password) {
-      setError("Please enter your email and password.");
+    if (!email.trim() || !password) {
+      setError("Enter your work email and password.");
       return;
     }
-
-    setIsLoading(true);
-
-    // Mock authentication for now.
+    setLoading(true);
+    // Placeholder until the admin auth endpoint exists (see docs/INTEGRATION.md).
     setTimeout(() => {
-      setIsLoading(false);
-      setError("Authentication is not connected yet.");
-    }, 800);
+      setLoading(false);
+      setError("Sign-in is not connected to the backend yet. Use the sandbox link below to explore.");
+    }, 700);
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        {/* Header */}
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-slate-900">
-            InPockets
-          </h1>
-
-          <p className="mt-2 text-sm text-slate-500">
-            Admin Panel
+    <div className="grid h-screen min-w-[1200px] grid-cols-[minmax(0,5fr)_minmax(0,4fr)]">
+      <section className="flex flex-col justify-between bg-brand-900 p-14 text-white">
+        <div className="flex items-center gap-2.5">
+          <span className="flex size-9 items-center justify-center rounded-lg bg-brand-500 font-display text-lg font-bold">I</span>
+          <span className="font-display text-lg font-semibold">InPockets</span>
+        </div>
+        <div className="max-w-md">
+          <h1 className="font-display text-4xl font-semibold leading-tight text-white">Every approval, with the reasons attached.</h1>
+          <p className="mt-4 text-base text-brand-200">
+            Review applications, release payouts and follow every repayment from one console. Each action is recorded with who did it and why.
           </p>
         </div>
+        <p className="text-xs text-brand-300">Authorised staff only. Access is logged.</p>
+      </section>
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Email */}
+      <section className="flex items-center justify-center bg-surface p-14">
+        <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5" noValidate>
           <div>
-            <label
-              htmlFor="email"
-              className="mb-2 block text-sm font-medium text-slate-700"
-            >
-              Email
-            </label>
-
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="admin@example.com"
-              className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
-            />
+            <h2 className="text-2xl font-semibold">Sign in</h2>
+            <p className="mt-1 text-sm text-muted">Use your InPockets work account.</p>
           </div>
 
-          {/* Password */}
-          <div>
-            <label
-              htmlFor="password"
-              className="mb-2 block text-sm font-medium text-slate-700"
-            >
-              Password
-            </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-ink">Work email</span>
+            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@inpockets.in" className={inputClass} />
+          </label>
 
-            <div className="relative">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-ink">Password</span>
+            <span className="relative block">
               <input
-                id="password"
-                type={showPassword ? "text" : "password"}
+                type={show ? "text" : "password"}
+                autoComplete="current-password"
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Enter your password"
-                className="w-full rounded-lg border border-slate-300 px-4 py-3 pr-16 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+                onChange={(e) => setPassword(e.target.value)}
+                className={`${inputClass} pr-16`}
               />
-
               <button
                 type="button"
-                onClick={() =>
-                  setShowPassword((current) => !current)
-                }
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-500 hover:text-slate-900"
+                onClick={() => setShow((s) => !s)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50"
               >
-                {showPassword ? "Hide" : "Show"}
+                {show ? "Hide" : "Show"}
               </button>
-            </div>
-          </div>
+            </span>
+          </label>
 
-          {/* Error Message */}
           {error && (
-            <p
-              role="alert"
-              className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600"
-            >
+            <p role="alert" className="rounded-lg bg-bad-soft px-3.5 py-2.5 text-sm text-bad">
               {error}
             </p>
           )}
 
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full rounded-lg bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {isLoading ? "Signing in..." : "Sign in"}
-          </button>
+          <Button type="submit" variant="primary" disabled={loading} className="h-10 w-full">
+            {loading ? "Signing in…" : "Sign in"}
+          </Button>
+
+          <p className="text-center text-sm text-muted">
+            <Link href="/dashboard" className="font-medium text-brand-700 hover:underline">
+              Continue with sandbox data
+            </Link>
+          </p>
         </form>
-      </div>
-    </main>
+      </section>
+    </div>
   );
 }
