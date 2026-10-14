@@ -15,6 +15,7 @@ npm run build
 - Design tokens (colours, type) live in `app/globals.css`. Shared components: `components/ui.tsx`.
 - Layout: the shell (`components/AppShell.tsx`) owns scrolling, so pages never create their own page-level scrollbars.
 
+This is the way to the full development and Git push procedure, the PR and branch below are the examples use as per your requirement 
 
 ```bash
 # First, update your local main branch
