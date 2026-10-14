@@ -1,34 +1,22 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Sora } from "next/font/google";
+import { AppShell } from "@/components/AppShell";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+// Same families as the mobile app (Sora for display, Inter for text).
+const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" });
+const sora = Sora({ variable: "--font-sora", subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "InPockets | Admin Panel",
-  description: "InPockets loan operations and administration dashboard",
+  title: { default: "InPockets Admin", template: "%s · InPockets Admin" },
+  description: "InPockets lending operations console",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full bg-slate-50 font-sans text-slate-950">
-        {children}
+    <html lang="en" className={`${inter.variable} ${sora.variable}`}>
+      <body>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
