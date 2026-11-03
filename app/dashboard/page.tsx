@@ -1,94 +1,60 @@
 "use client";
 
-import Link from "next/link";
-import {
-  Badge, Card, DataTable, type Column, PageHeader, Person, StatusBadge, Stat, Meter, Grid,
-} from "@/components/ui";
-import { applications, collectionCases, complaints, customerName, disbursements, loans, providerHealth, reconciliations, kycRecords, fraudCases, tickets, type Application, type Disbursement, NOW } from "@/lib/mock";
-import { fmtDateTime, inr, daysBetween, TODAY } from "@/lib/format";
+import { Card, DataTable, Grid, PageHeader, Person, Stat, StatusBadge, type Column } from "@/components/ui";
+import { ErrorNote, Loading, money } from "@/components/live";
+import { fmtDateTime } from "@/lib/format";
+import type { Disbursement, Queue, QueueItem } from "@/lib/types";
+import { useApi } from "@/lib/use-api";
+import { useSession } from "@/lib/session";
 
-export default function DashboardPage() {
-  const review = applications.filter((a) => a.state === "MANUAL_REVIEW" || a.state === "PENDING_INFORMATION");
-  const kycOpen = kycRecords.filter((k) => k.state === "MANUAL_REVIEW" || k.state === "PENDING").length;
-  const fraudOpen = fraudCases.filter((f) => f.state !== "CLEARED").length;
-  const toRelease = disbursements.filter((d) => d.status === "PENDING");
-  const mismatches = reconciliations.filter((r) => r.status === "MISMATCH").length;
-  const overdue = loans.filter((l) => l.status === "OVERDUE");
-  const overdueAmount = overdue.reduce((s, l) => s + l.outstanding, 0);
-  const openTickets = tickets.filter((t) => t.status !== "RESOLVED").length;
-  const activeCases = collectionCases.filter((c) => c.stage !== "RESOLVED" && c.dpd > 0).length;
+const q = (statuses: string[], size = 1) => `admin/loan-applications/queue?${statuses.map((s) => `status=${s}`).join("&")}&page_size=${size}`;
 
-  const queueColumns: Column<Application>[] = [
-    { key: "app", header: "Application", render: (a) => (<div className="min-w-0"><p className="num font-medium text-ink">{a.id}</p><p className="truncate text-xs text-muted">{a.purpose}</p></div>) },
-    { key: "cus", header: "Customer", render: (a) => <Person name={customerName(a.customerId)} /> },
-    { key: "amt", header: "Requested", align: "right", render: (a) => <span className="num">{inr(a.requested)}</span> },
-    { key: "risk", header: "Risk", render: (a) => (a.risk.band ? <StatusBadge status={a.risk.band} /> : <span className="text-xs text-faint">Pending</span>) },
-    { key: "age", header: "Waiting", render: (a) => { const d = daysBetween(a.submitted.slice(0, 10), TODAY); return <span className="text-sm text-muted">{d === 0 ? "Today" : `${d}d`}</span>; } },
-  ];
+export default function Dashboard() {
+  const { me, can } = useSession();
+  const submitted = useApi<Queue>(q(["SUBMITTED"]));
+  const processing = useApi<Queue>(q(["PROCESSING", "MANUAL_REVIEW"]));
+  const info = useApi<Queue>(q(["PENDING_ADDITIONAL_INFORMATION"]));
+  const approved = useApi<Queue>(q(["APPROVED"]));
+  const oldest = useApi<Queue>(q(["SUBMITTED", "PROCESSING", "MANUAL_REVIEW"], 8));
+  const payouts = useApi<Disbursement[]>(can("DISBURSEMENT_READ") || can("DISBURSEMENT_EXECUTE") ? "admin/disbursements?limit=200" : null);
 
-  const releaseColumns: Column<Disbursement>[] = [
-    { key: "id", header: "Payout", render: (d) => <span className="num font-medium text-ink">{d.id}</span> },
-    { key: "cus", header: "Customer", render: (d) => <Person name={customerName(d.customerId)} /> },
-    { key: "amt", header: "Amount", align: "right", render: (d) => <span className="num">{inr(d.amount)}</span> },
+  const count = (d: Queue | null) => (d ? d.total : "…");
+  const by = (s: string) => payouts.data?.filter((d) => d.status === s).length ?? 0;
+  const reviewPayouts = by("REQUIRES_REVIEW");
+
+  const columns: Column<QueueItem>[] = [
+    { key: "n", header: "Application", render: (a) => <span className="num font-medium text-ink">{a.application_number}</span> },
+    { key: "c", header: "Customer", render: (a) => <Person name={a.customer_name ?? "Unnamed customer"} sub={a.phone_last4 ? `…${a.phone_last4}` : undefined} /> },
+    { key: "r", header: "Requested", align: "right", render: (a) => <span className="num">{money(a.requested_amount)}</span> },
+    { key: "s", header: "Status", render: (a) => <StatusBadge status={a.status} /> },
+    { key: "t", header: "Submitted", render: (a) => <span className="text-sm text-muted">{a.submitted_at ? fmtDateTime(a.submitted_at) : "—"}</span> },
   ];
 
   return (
     <>
-      <PageHeader title="Today" description={`Work waiting for a person · updated ${fmtDateTime(NOW)}`} />
-
-      <Grid cols={5} className="mb-6">
-        <Stat label="Applications to decide" value={review.length} hint={`${review.filter((a) => a.state === "PENDING_INFORMATION").length} waiting on customer info`} href="/applications" />
-        <Stat label="KYC and fraud reviews" value={kycOpen + fraudOpen} hint={`${kycOpen} KYC · ${fraudOpen} fraud`} href="/kyc" />
-        <Stat label="Payouts to release" value={toRelease.length} hint={toRelease.length ? inr(toRelease.reduce((s, d) => s + d.amount, 0)) + " ready" : "Nothing waiting"} tone="ok" href="/disbursements" />
-        <Stat label="Overdue loans" value={overdue.length} hint={`${inr(overdueAmount)} outstanding`} tone="bad" href="/collections" />
-        <Stat label="Reconciliation breaks" value={mismatches} hint={mismatches ? "Needs finance review" : "All matched"} tone={mismatches ? "warn" : "ok"} href="/reconciliation" />
+      <PageHeader title="Dashboard" description={me ? `Signed in as ${me.role.replaceAll("_", " ").toLowerCase()}. Live figures from the backend.` : undefined} />
+      <ErrorNote error={submitted.error ?? processing.error} />
+      <Grid cols={4}>
+        <Stat label="Waiting for pickup" value={count(submitted.data)} hint="Submitted, not yet processed" href="/applications" tone={submitted.data && submitted.data.total > 0 ? "warn" : undefined} />
+        <Stat label="In review" value={count(processing.data)} hint="Processing or manual review" href="/applications" />
+        <Stat label="Waiting on customer" value={count(info.data)} hint="Additional information requested" />
+        <Stat label="Approved" value={count(approved.data)} hint="Ready for an offer" href="/applications" />
       </Grid>
-
-      <div className="grid grid-cols-[minmax(0,1fr)_400px] items-start gap-6">
-        <Card
-          title="Application queue"
-          description="Waiting for a decision or more information, oldest first"
-          flush
-          action={<Link href="/applications" className="text-sm font-medium text-brand-700 hover:underline">Open queue</Link>}
-        >
-          <DataTable columns={queueColumns} rows={[...review].sort((a, b) => a.submitted.localeCompare(b.submitted))} rowKey={(a) => a.id} rowHref={(a) => `/applications/${a.id}`} />
+      {payouts.data && (
+        <div className="mt-4">
+          <Grid cols={4}>
+            <Stat label="Payouts in flight" value={by("PENDING") + by("PROCESSING")} href="/disbursements" />
+            <Stat label="Payouts needing review" value={reviewPayouts} tone={reviewPayouts ? "bad" : undefined} hint={reviewPayouts ? "Finance action required" : "None"} href="/disbursements" />
+            <Stat label="Paid out" value={by("SUCCESS")} href="/disbursements" />
+            <Stat label="Failed or reversed" value={by("FAILED") + by("REVERSED")} href="/disbursements" />
+          </Grid>
+        </div>
+      )}
+      <div className="mt-6">
+        <Card title="Oldest applications waiting" description="First in, first out." flush>
+          {oldest.loading ? <Loading what="applications" /> : <DataTable columns={columns} rows={oldest.data?.items ?? []} rowKey={(a) => a.id} rowHref={(a) => `/applications/${a.id}`} />}
         </Card>
-
-        <div className="min-w-0 space-y-6">
-          <Card title="Ready to release" description="Approved, signed and bank-verified" flush action={<Link href="/disbursements" className="text-sm font-medium text-brand-700 hover:underline">All payouts</Link>}>
-            <DataTable
-              columns={releaseColumns}
-              rows={toRelease}
-              rowKey={(d) => d.id}
-              rowHref={(d) => `/disbursements/${d.id}`}
-              empty={<p className="px-5 py-8 text-center text-sm text-muted">No payouts are waiting for release.</p>}
-            />
-          </Card>
-
-          <Card title="Servicing" description="Open items outside underwriting">
-            <ul className="space-y-3 text-sm">
-              <li className="flex items-center justify-between"><Link href="/collections" className="text-body hover:text-brand-700">Active collection cases</Link><span className="num font-medium text-ink">{activeCases}</span></li>
-              <li className="flex items-center justify-between"><Link href="/support" className="text-body hover:text-brand-700">Open support tickets</Link><span className="num font-medium text-ink">{openTickets}</span></li>
-              <li className="flex items-center justify-between"><Link href="/complaints" className="text-body hover:text-brand-700">Complaints in progress</Link><span className="num font-medium text-ink">{complaints.filter((c) => c.status !== "RESOLVED").length}</span></li>
-            </ul>
-          </Card>
-        </div>
       </div>
-
-      <Card title="Provider health" description="Last 24 hours" className="mt-6">
-        <div className="grid grid-cols-6 gap-6">
-          {providerHealth.map((p) => (
-            <div key={p.name} className="min-w-0">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="truncate text-sm font-medium text-ink">{p.name}</p>
-                <Badge tone={p.status === "OK" ? "ok" : "warn"} dot={false}>{p.status === "OK" ? "OK" : "Slow"}</Badge>
-              </div>
-              <Meter value={p.failures} max={20} tone={p.status === "OK" ? "ok" : "warn"} label={`${p.name} failures`} />
-              <p className="mt-2 text-xs text-muted">{p.failures} failures · p95 {p.p95}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
     </>
   );
 }

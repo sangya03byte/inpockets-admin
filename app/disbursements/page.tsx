@@ -1,57 +1,41 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Card, DataTable, type Column, PageHeader, Person, SearchField, Segmented, StatusBadge, TableFooter, Toolbar, Notice } from "@/components/ui";
-import { customerName, disbursements, type Disbursement } from "@/lib/mock";
-import { fmtDateTime, inr } from "@/lib/format";
+import { useState } from "react";
+import { Card, DataTable, PageHeader, Segmented, StatusBadge, Toolbar, type Column } from "@/components/ui";
+import { ErrorNote, Loading, money } from "@/components/live";
+import { fmtDateTime } from "@/lib/format";
+import type { Disbursement } from "@/lib/types";
+import { useApi } from "@/lib/use-api";
 
-type Filter = "all" | "PENDING" | "PROCESSING" | "SUCCESS" | "attention";
+type Filter = "all" | "REQUIRES_REVIEW" | "PROCESSING" | "SUCCESS" | "FAILED";
 
-export default function DisbursementsPage() {
-  const [q, setQ] = useState("");
+export default function Disbursements() {
   const [filter, setFilter] = useState<Filter>("all");
-
-  const match = (d: Disbursement, f: Filter) => (f === "all" ? true : f === "attention" ? d.status === "FAILED" || d.status === "REQUIRES_REVIEW" : d.status === f);
-
-  const rows = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return disbursements
-      .filter((d) => match(d, filter))
-      .filter((d) => !term || d.id.toLowerCase().includes(term) || d.loanId.toLowerCase().includes(term) || customerName(d.customerId).toLowerCase().includes(term));
-  }, [q, filter]);
+  const { data, error, loading } = useApi<Disbursement[]>(`admin/disbursements?limit=200${filter === "all" ? "" : `&status=${filter}`}`);
 
   const columns: Column<Disbursement>[] = [
-    { key: "id", header: "Payout", render: (d) => <span className="num font-medium text-ink">{d.id}</span> },
-    { key: "loan", header: "Loan", render: (d) => <span className="num text-muted">{d.loanId}</span> },
-    { key: "cus", header: "Customer", minWidth: 200, render: (d) => <Person name={customerName(d.customerId)} sub={`${d.bank} ${d.account}`} /> },
-    { key: "amt", header: "Amount", align: "right", render: (d) => <span className="num font-medium text-ink">{inr(d.amount)}</span> },
-    { key: "s", header: "Status", render: (d) => <StatusBadge status={d.status} /> },
-    { key: "at", header: "Created", render: (d) => <span className="whitespace-nowrap text-muted">{fmtDateTime(d.created)}</span> },
+    { key: "id", header: "Payout", render: (d) => <span className="num font-medium text-ink">{d.id.slice(0, 8)}</span> },
+    { key: "amt", header: "Amount", align: "right", render: (d) => <span className="num font-medium text-ink">{money(d.amount)}</span> },
+    { key: "acct", header: "Account", render: (d) => <div><p className="num text-sm text-body">{d.account_number_masked}</p><p className="text-xs text-muted">{d.ifsc}</p></div> },
+    { key: "st", header: "Status", render: (d) => <StatusBadge status={d.status} /> },
+    { key: "at", header: "Attempt", render: (d) => <span className="num">{d.attempt}</span> },
+    { key: "utr", header: "UTR", render: (d) => <span className="num text-sm text-muted">{d.utr ?? "—"}</span> },
+    { key: "req", header: "Requested", render: (d) => <span className="whitespace-nowrap text-sm text-muted">{fmtDateTime(d.requested_at)}</span> },
   ];
-
-  const count = (f: Filter) => disbursements.filter((d) => match(d, f)).length;
 
   return (
     <>
-      <PageHeader title="Disbursements" description="Money leaves the account only after a person releases it here. Each payout can be sent once." />
-      {disbursements.some((d) => d.status === "PENDING") && <Notice tone="brand">{count("PENDING")} payout is ready for release. Open it to review the pre-disbursement checks.</Notice>}
+      <PageHeader title="Disbursements" description="Payouts to customers. A payout is only ever marked paid from the provider's confirmation, never from the app." />
+      <ErrorNote error={error} />
       <Card flush>
         <Toolbar>
-          <SearchField value={q} onChange={setQ} placeholder="Search payout, loan or customer" />
-          <Segmented<Filter>
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { value: "all", label: "All", count: count("all") },
-              { value: "PENDING", label: "Ready to release", count: count("PENDING") },
-              { value: "PROCESSING", label: "Processing", count: count("PROCESSING") },
-              { value: "SUCCESS", label: "Paid", count: count("SUCCESS") },
-              { value: "attention", label: "Needs attention", count: count("attention") },
-            ]}
-          />
+          <Segmented<Filter> value={filter} onChange={setFilter} options={[
+            { value: "all", label: "All" }, { value: "REQUIRES_REVIEW", label: "Needs review" }, { value: "PROCESSING", label: "Processing" },
+            { value: "SUCCESS", label: "Paid" }, { value: "FAILED", label: "Failed" },
+          ]} />
         </Toolbar>
-        <DataTable columns={columns} rows={rows} rowKey={(d) => d.id} rowHref={(d) => `/disbursements/${d.id}`} />
-        <TableFooter shown={rows.length} total={disbursements.length} noun="payouts" />
+        {loading && !data ? <Loading what="payouts" /> : <DataTable columns={columns} rows={data ?? []} rowKey={(d) => d.id} rowHref={(d) => `/disbursements/${d.id}`} />}
+        <div className="border-t border-line px-5 py-3 text-xs text-muted">{data ? `${data.length} payout${data.length === 1 ? "" : "s"}` : ""}</div>
       </Card>
     </>
   );
