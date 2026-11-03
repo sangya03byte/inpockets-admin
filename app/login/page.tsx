@@ -1,96 +1,87 @@
 "use client";
 
-import Link from "next/link";
-import { type FormEvent, useState } from "react";
-import { Button, inputClass } from "@/components/ui";
+import { Suspense, useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import { ApiError, auth } from "@/lib/api";
+import { Button, Field, Notice, inputClass } from "@/components/ui";
 
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [show, setShow] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+type Step = "phone" | "code";
 
-  function onSubmit(e: FormEvent) {
+function SignIn() {
+  const params = useSearchParams();
+  const [step, setStep] = useState<Step>("phone");
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [totp, setTotp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const next = params.get("next");
+  const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+
+  async function requestOtp(e: FormEvent) {
     e.preventDefault();
-    setError("");
-    if (!email.trim() || !password) {
-      setError("Enter your work email and password.");
-      return;
+    setBusy(true); setError(null);
+    try {
+      await auth.requestOtp(phone.trim());
+      setStep("code");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong");
+    } finally { setBusy(false); }
+  }
+
+  async function signIn(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      const r = await auth.login({ phone_number: phone.trim(), otp: otp.trim(), ...(totp.trim() ? { totp_code: totp.trim() } : {}) });
+      window.location.assign(r.mfa_enrollment_required ? "/account" : safeNext);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong");
+      setBusy(false);
     }
-    setLoading(true);
-    // Placeholder until the admin auth endpoint exists (see docs/INTEGRATION.md).
-    setTimeout(() => {
-      setLoading(false);
-      setError("Sign-in is not connected to the backend yet. Use the sandbox link below to explore.");
-    }, 700);
   }
 
   return (
-    <div className="grid h-screen min-w-[1200px] grid-cols-[minmax(0,5fr)_minmax(0,4fr)]">
-      <section className="flex flex-col justify-between bg-brand-900 p-14 text-white">
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-brand-500 font-display text-lg font-bold">I</span>
-          <span className="font-display text-lg font-semibold">InPockets</span>
-        </div>
-        <div className="max-w-md">
-          <h1 className="font-display text-4xl font-semibold leading-tight text-white">Every approval, with the reasons attached.</h1>
-          <p className="mt-4 text-base text-brand-200">
-            Review applications, release payouts and follow every repayment from one console. Each action is recorded with who did it and why.
-          </p>
-        </div>
-        <p className="text-xs text-brand-300">Authorised staff only. Access is logged.</p>
-      </section>
-
-      <section className="flex items-center justify-center bg-surface p-14">
-        <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5" noValidate>
+    <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
+      <div className="w-full max-w-[400px] rounded-2xl bg-surface p-8 shadow-card ring-1 ring-line">
+        <div className="mb-6 flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-brand-600 font-display text-lg font-bold text-white">I</span>
           <div>
-            <h2 className="text-2xl font-semibold">Sign in</h2>
-            <p className="mt-1 text-sm text-muted">Use your InPockets work account.</p>
+            <h1 className="font-display text-lg font-semibold text-ink">InPockets staff sign-in</h1>
+            <p className="text-xs text-muted">Operations console</p>
           </div>
+        </div>
 
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-ink">Work email</span>
-            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@inpockets.in" className={inputClass} />
-          </label>
+        {error && <div className="mb-4"><Notice tone="bad">{error}</Notice></div>}
 
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-ink">Password</span>
-            <span className="relative block">
-              <input
-                type={show ? "text" : "password"}
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={`${inputClass} pr-16`}
-              />
-              <button
-                type="button"
-                onClick={() => setShow((s) => !s)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs font-medium text-brand-700 hover:bg-brand-50"
-              >
-                {show ? "Hide" : "Show"}
-              </button>
-            </span>
-          </label>
-
-          {error && (
-            <p role="alert" className="rounded-lg bg-bad-soft px-3.5 py-2.5 text-sm text-bad">
-              {error}
-            </p>
-          )}
-
-          <Button type="submit" variant="primary" disabled={loading} className="h-10 w-full">
-            {loading ? "Signing in…" : "Sign in"}
-          </Button>
-
-          <p className="text-center text-sm text-muted">
-            <Link href="/dashboard" className="font-medium text-brand-700 hover:underline">
-              Continue with sandbox data
-            </Link>
-          </p>
-        </form>
-      </section>
-    </div>
+        {step === "phone" ? (
+          <form onSubmit={requestOtp} className="space-y-4">
+            <Field label="Mobile number" hint="The number registered for your staff account.">
+              <input className={inputClass} inputMode="numeric" autoComplete="tel" maxLength={10} value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} placeholder="10-digit mobile number" required />
+            </Field>
+            <Button variant="primary" type="submit" disabled={busy || phone.length !== 10}>{busy ? "Sending…" : "Send code"}</Button>
+          </form>
+        ) : (
+          <form onSubmit={signIn} className="space-y-4">
+            <Notice tone="brand">If this number belongs to an active staff account, a code was sent to ******{phone.slice(-4)}.</Notice>
+            <Field label="SMS code">
+              <input className={inputClass} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} placeholder="6-digit code" required autoFocus />
+            </Field>
+            <Field label="Authenticator code" hint="Only if you have set up MFA.">
+              <input className={inputClass} inputMode="numeric" maxLength={6} value={totp} onChange={(e) => setTotp(e.target.value.replace(/\D/g, ""))} placeholder="6-digit code (optional)" />
+            </Field>
+            <div className="flex items-center gap-3">
+              <Button variant="primary" type="submit" disabled={busy || otp.length !== 6}>{busy ? "Signing in…" : "Sign in"}</Button>
+              <button type="button" className="text-sm text-muted hover:text-ink" onClick={() => { setStep("phone"); setOtp(""); setTotp(""); setError(null); }}>Use a different number</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </main>
   );
+}
+
+export default function LoginPage() {
+  return <Suspense fallback={null}><SignIn /></Suspense>;
 }
