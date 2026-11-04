@@ -3,8 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon, type IconName } from "./Icon";
+import { useSession } from "@/lib/session";
 
-type NavItem = { label: string; href: string; icon: IconName };
+type NavItem = { label: string; href: string; icon: IconName; permission?: string };
+
+/** Sections wired to the real backend. Everything else is clearly marked as sample data. */
+const LIVE = ["/dashboard", "/applications", "/customers", "/disbursements", "/staff", "/account"];
+export const isLivePath = (p: string) => LIVE.some((h) => p === h || p.startsWith(`${h}/`));
 
 const GROUPS: { title: string; items: NavItem[] }[] = [
   {
@@ -48,7 +53,8 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
     title: "Administration",
     items: [
       { label: "Lending policy", href: "/policy", icon: "sliders" },
-      { label: "Admin users", href: "/admin/users", icon: "user" },
+      { label: "Staff", href: "/staff", icon: "user", permission: "ADMIN_MANAGE" },
+      { label: "My account & MFA", href: "/account", icon: "key" },
       { label: "Roles & permissions", href: "/admin/roles", icon: "key" },
     ],
   },
@@ -56,6 +62,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { can } = useSession();
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
@@ -77,7 +84,7 @@ export function Sidebar() {
           <div key={group.title} className="mb-5 last:mb-0">
             <p className="mb-1.5 px-3 text-xs font-medium text-faint">{group.title}</p>
             <ul className="space-y-0.5">
-              {group.items.map((item) => {
+              {group.items.filter((item) => !item.permission || can(item.permission)).map((item) => {
                 const active = isActive(item.href);
                 return (
                   <li key={item.href}>
@@ -90,6 +97,7 @@ export function Sidebar() {
                     >
                       <Icon name={item.icon} size={17} className={active ? "text-brand-600" : "text-faint"} />
                       <span className="truncate">{item.label}</span>
+                      {!isLivePath(item.href) && <span className="ml-auto rounded bg-canvas px-1.5 py-0.5 text-[10px] font-medium text-faint ring-1 ring-inset ring-line">sample</span>}
                     </Link>
                   </li>
                 );

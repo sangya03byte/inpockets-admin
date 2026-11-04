@@ -2,286 +2,198 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { useState } from "react";
 import {
-  Badge, Button, Card, DefList, Dialog, Field, inputClass, LinkButton, NotFoundState, Notice, PageHeader,
-  ReasonDialog, StatusBadge, Timeline, DetailLayout, type Tone,
+  Badge, Button, Card, DefList, DetailLayout, Dialog, Field, NotFoundState, Notice, PageHeader, ReasonDialog, StatusBadge, Timeline, inputClass,
 } from "@/components/ui";
-import { Icon } from "@/components/Icon";
-import { auditEvents, customerName, getApplication, getCustomer, kycRecords, PIPELINE, type Application } from "@/lib/mock";
-import { fmtDateTime, humanize, inr } from "@/lib/format";
+import { ErrorNote, Loading, money, useAction } from "@/components/live";
+import { api } from "@/lib/api";
+import { fmtDateTime, humanize } from "@/lib/format";
+import { useSession } from "@/lib/session";
+import type { AppEvent, Application, Customer, Decision, Offer } from "@/lib/types";
+import { useApi } from "@/lib/use-api";
 
-type Action = "approve" | "reject" | "info" | "escalate" | null;
+type Dlg = null | "approve" | "reject" | "info" | "offer";
 
-const DIM_DOT: Record<string, string> = { ok: "bg-ok", warn: "bg-[#e39a2d]", bad: "bg-bad", neutral: "bg-faint" };
+export default function ApplicationDetail() {
+  const { applicationId: id } = useParams<{ applicationId: string }>();
+  const { can } = useSession();
+  const [dlg, setDlg] = useState<Dlg>(null);
 
-export default function ApplicationDetailPage() {
-  const { applicationId } = useParams<{ applicationId: string }>();
-  const base = getApplication(applicationId);
-  const [override, setOverride] = useState<Partial<Application> | null>(null);
-  const [action, setAction] = useState<Action>(null);
-  const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null);
+  const app = useApi<Application>(`admin/loan-applications/${id}`);
+  const events = useApi<AppEvent[]>(`admin/loan-applications/${id}/events`);
+  const decision = useApi<Decision>(`admin/loan-applications/${id}/decision`);
+  const customer = useApi<Customer>(app.data ? `admin/customers/${app.data.user_id}` : null);
+  const offers = useApi<Offer[]>(`admin/loan-offers?loan_application_id=${id}`);
 
-  if (!base) return <NotFoundState what="Application" backHref="/applications" backLabel="Back to applications" />;
+  const reloadAll = () => { app.reload(); events.reload(); decision.reload(); offers.reload(); };
+  const act = useAction(reloadAll);
 
-  const app: Application = { ...base, ...override };
-  const customer = getCustomer(app.customerId);
-  const kyc = kycRecords.find((k) => k.customerId === app.customerId);
-  const reviewable = app.state === "MANUAL_REVIEW" || app.state === "PENDING_INFORMATION";
-  const history = auditEvents.filter((e) => e.entityId === app.id);
-  const band = app.risk.band;
+  if (app.loading && !app.data) return <Loading what="application" />;
+  if (app.error?.status === 404 || app.error?.status === 422) return <NotFoundState what="Application" backHref="/applications" backLabel="Back to applications" />;
+  if (!app.data) return <ErrorNote error={app.error} />;
+  const a = app.data;
+  const d = decision.data;
+  const hasOffer = (offers.data ?? []).some((o) => o.status !== "CANCELLED");
 
-  function done(text: string, state: Application["state"], router: Application["router"], tone: Tone = "ok", stage?: number) {
-    setOverride({ state, router, stage: stage ?? app.stage });
-    setNotice({ tone, text });
-    setAction(null);
-  }
+  const post = (path: string, body?: unknown) => act.run(() => api.post(`admin/loan-applications/${id}/${path}`, body));
 
   return (
     <>
       <PageHeader
-        crumbs={[{ label: "Applications", href: "/applications" }, { label: app.id }]}
-        title={app.id}
-        badge={<StatusBadge status={app.state} />}
-        description={
-          <>
-            {customerName(app.customerId)} · submitted via {app.channel}
-          </>
-        }
-        actions={<LinkButton href={`/customers/${app.customerId}`}>View customer</LinkButton>}
+        crumbs={[{ label: "Applications", href: "/applications" }, { label: a.application_number }]}
+        title={a.application_number}
+        badge={<StatusBadge status={a.status} />}
+        description={`Requested ${money(a.requested_amount)} for ${a.requested_tenure_days} days`}
       />
-
-      {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-
-      {/* Pipeline: where this application is on the way to money in the customer's account. */}
-      <Card className="mb-6">
-        <ol className="grid grid-cols-7 gap-2" aria-label="Lending pipeline">
-          {PIPELINE.map((step, i) => {
-            const complete = i < app.stage || (app.state === "APPROVED" && i <= app.stage);
-            const current = i === app.stage && !complete && app.state !== "REJECTED";
-            const rejectedHere = app.state === "REJECTED" && i === app.stage;
-            return (
-              <li key={step} className="min-w-0">
-                <div className={`mb-2 h-1 rounded-full ${rejectedHere ? "bg-bad" : complete ? "bg-brand-500" : current ? "bg-brand-300" : "bg-brand-100"}`} />
-                <p className={`truncate text-xs ${current || rejectedHere ? "font-semibold text-ink" : complete ? "text-body" : "text-faint"}`}>{step}</p>
-                <p className="truncate text-[11px] text-muted">{rejectedHere ? "Rejected" : complete ? "Done" : current ? "In progress" : "Not started"}</p>
-              </li>
-            );
-          })}
-        </ol>
-      </Card>
+      <div className="mb-4 space-y-3"><ErrorNote error={act.error} /></div>
 
       <DetailLayout
         main={
           <>
-            {/* Requested vs eligible, the number a reviewer decides on */}
-            <Card>
-              <div className="grid grid-cols-[1fr_1fr_1fr_1fr] gap-6">
-                <div className="min-w-0">
-                  <p className="text-xs text-muted">Requested</p>
-                  <p className="num mt-1 font-display text-3xl font-semibold text-ink">{inr(app.requested)}</p>
-                  <p className="mt-1 text-xs text-muted">{app.tenureMonths} {app.tenureMonths === 1 ? "month" : "months"}</p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-muted">System eligible</p>
-                  <p className={`num mt-1 font-display text-3xl font-semibold ${app.eligible < app.requested ? "text-warn" : "text-ink"}`}>{app.eligible > 0 ? inr(app.eligible) : "None"}</p>
-                  {app.eligible > 0 && app.eligible < app.requested && <p className="mt-1 text-xs text-warn">{inr(app.requested - app.eligible)} above policy</p>}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-muted">Recommended level</p>
-                  <p className="mt-1 font-display text-3xl font-semibold text-ink">{app.recommendedLevel}</p>
-                  <p className="mt-1 text-xs text-muted">Policy {app.policyVersion}</p>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-muted">Router result</p>
-                  <div className="mt-2"><StatusBadge status={app.router} /></div>
-                  <p className="wrap-any mt-2 text-xs text-muted">Purpose: {app.purpose}</p>
-                </div>
-              </div>
+            <Card title="Application">
+              <DefList items={[
+                { label: "Application number", value: <span className="num">{a.application_number}</span> },
+                { label: "Status", value: <StatusBadge status={a.status} /> },
+                { label: "Requested amount", value: <span className="num">{money(a.requested_amount)}</span> },
+                { label: "Requested tenure", value: `${a.requested_tenure_days} days` },
+                { label: "Submitted", value: a.submitted_at ? fmtDateTime(a.submitted_at) : "Not submitted" },
+                { label: "Created", value: fmtDateTime(a.created_at) },
+              ]} />
             </Card>
 
-            <Card title="Risk assessment" description="Higher score means higher risk. Every score comes with the reasons behind it.">
-              <div className="grid grid-cols-[180px_minmax(0,1fr)] gap-8">
-                <div>
-                  <p className="num font-display text-5xl font-semibold leading-none text-ink">{app.risk.score ?? "—"}</p>
-                  <div className="mt-3">{band ? <StatusBadge status={band} /> : <Badge tone="brand">Awaiting bureau</Badge>}</div>
-                  {app.risk.score !== null && (
-                    <div className="mt-4" aria-hidden="true">
-                      <div className="relative h-2 rounded-full bg-gradient-to-r from-[#bfe6d4] via-[#f5d9aa] to-[#f6c5c2]">
-                        <span className="absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-ink shadow" style={{ left: `${app.risk.score}%` }} />
-                      </div>
-                      <div className="mt-1 flex justify-between text-[10px] text-faint"><span>0</span><span>100</span></div>
-                    </div>
-                  )}
-                </div>
-                <dl className="grid grid-cols-3 gap-x-6 gap-y-4">
-                  {app.risk.dimensions.map((d) => (
-                    <div key={d.name} className="min-w-0">
-                      <dt className="text-xs text-muted">{d.name}</dt>
-                      <dd className="mt-0.5 flex items-center gap-2 text-sm font-medium text-ink">
-                        <span className={`size-2 shrink-0 rounded-full ${DIM_DOT[d.tone]}`} />
-                        <span className="truncate">{d.value}</span>
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-
-              <div className="mt-6 grid grid-cols-3 gap-6 border-t border-line pt-5">
-                <SignalList title="Positive signals" tone="ok" items={app.risk.positives} empty="None recorded" />
-                <SignalList title="Review signals" tone="warn" items={app.risk.warnings} empty="None" />
-                <SignalList title="Critical flags" tone="bad" items={app.risk.critical} empty="None" />
-              </div>
-            </Card>
-
-            <Card title="Customer and verification">
-              <DefList
-                cols={3}
-                items={[
-                  { label: "Customer", value: <Link href={`/customers/${app.customerId}`} className="text-brand-700 hover:underline">{customerName(app.customerId)}</Link> },
-                  { label: "Customer ID", value: app.customerId },
-                  { label: "City", value: customer?.city },
-                  { label: "KYC", value: customer ? <StatusBadge status={customer.kyc} /> : "—" },
-                  { label: "PAN", value: kyc ? <StatusBadge status={kyc.pan} /> : "—" },
-                  { label: "Liveness", value: kyc ? <StatusBadge status={kyc.liveness} /> : "—" },
-                  { label: "Current level", value: customer?.level },
-                  { label: "Device", value: customer?.device },
-                  { label: "KYC record", value: kyc ? <Link href={`/kyc/${kyc.id}`} className="text-brand-700 hover:underline">{kyc.id}</Link> : "—" },
-                ]}
-              />
-            </Card>
-
-            <Card title="Decision record" description="Stored with the decision. Later policy changes never rewrite it.">
-              <DefList
-                cols={3}
-                items={[
-                  { label: "Policy version", value: app.policyVersion },
-                  { label: "Risk model", value: app.modelVersion },
-                  { label: "Submitted", value: fmtDateTime(app.submitted) },
-                  { label: "Assigned to", value: app.assignedTo },
-                  { label: "Router result", value: humanize(app.router) },
-                  { label: "Current state", value: humanize(app.state) },
-                ]}
-              />
-            </Card>
-
-            <Card title="Activity">
-              {history.length === 0 ? (
-                <p className="text-sm text-muted">No reviewer activity yet.</p>
+            <Card title="Decision" description="The recorded, immutable human decision.">
+              {d ? (
+                <DefList items={[
+                  { label: "Decision", value: <Badge tone={d.decision === "APPROVED" ? "ok" : "bad"}>{d.decision}</Badge> },
+                  { label: "Approved amount", value: <span className="num">{money(d.approved_amount)}</span> },
+                  { label: "Decided", value: fmtDateTime(d.created_at) },
+                  { label: "Reason", value: d.reason },
+                ]} />
               ) : (
-                <Timeline items={history.map((e) => ({ title: humanize(e.action), meta: `${e.actor} · ${fmtDateTime(e.at)}`, body: e.reason !== "—" ? e.reason : undefined }))} />
+                <p className="text-sm text-muted">No decision has been recorded yet.</p>
+              )}
+            </Card>
+
+            <Card title="Offers" description="Terms the customer will see in the app once issued.">
+              {offers.loading && !offers.data ? <Loading what="offers" /> : (offers.data ?? []).length === 0 ? (
+                <p className="text-sm text-muted">No offer yet.{a.status === "APPROVED" ? " Create one from the actions panel." : ""}</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {offers.data!.map((o) => (
+                    <li key={o.id} className="flex items-center justify-between gap-4 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-ink"><span className="num">{money(o.principal_amount)}</span> · {o.tenure_days} days · v{o.version}</p>
+                        <p className="text-xs text-muted">Created {fmtDateTime(o.created_at)}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <StatusBadge status={o.effective_status ?? o.status} />
+                        <Link href={`/offers/${o.id}`} className="text-sm font-medium text-brand-700 hover:underline">Open</Link>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+
+            <Card title="History">
+              {events.loading && !events.data ? <Loading what="history" /> : (
+                <Timeline items={(events.data ?? []).map((e) => ({
+                  title: `${humanize(e.event_type)}${e.new_status ? ` → ${humanize(e.new_status)}` : ""}`,
+                  meta: `${fmtDateTime(e.created_at)} · ${humanize(e.actor_type)}`,
+                  body: e.reason ?? undefined,
+                  tone: e.new_status === "REJECTED" ? "bad" : e.new_status === "APPROVED" ? "ok" : "brand",
+                }))} />
               )}
             </Card>
           </>
         }
         side={
-          <Card title="Decision">
-            {reviewable ? (
-              <>
-                <p className="text-sm text-muted">System recommendation</p>
-                <p className="mt-1 text-sm font-medium text-ink">
-                  {humanize(app.router)}
-                  {app.eligible > 0 && <> · up to {inr(app.eligible)} at {app.recommendedLevel}</>}
-                </p>
-                {band && (
-                  <p className="mt-2 text-xs text-muted">
-                    Overall risk is <span className={`font-medium ${band === "HIGH" ? "text-bad" : band === "MEDIUM" ? "text-warn" : "text-ok"}`}>{band.toLowerCase()}</span>.
-                  </p>
+          <>
+            <Card title="Actions">
+              <div className="flex flex-col gap-2">
+                {a.status === "SUBMITTED" && can("LOAN_APPLICATION_REVIEW") && <Button variant="primary" disabled={act.busy} onClick={() => post("process")}>Pick up for processing</Button>}
+                {a.status === "PROCESSING" && can("LOAN_APPLICATION_REVIEW") && <Button variant="primary" disabled={act.busy} onClick={() => post("start-review")}>Start manual review</Button>}
+                {["PROCESSING", "MANUAL_REVIEW"].includes(a.status) && (
+                  <>
+                    {can("LOAN_APPROVE") && <Button variant="success" disabled={act.busy} onClick={() => setDlg("approve")}>Approve…</Button>}
+                    {can("LOAN_REJECT") && <Button variant="danger" disabled={act.busy} onClick={() => setDlg("reject")}>Reject…</Button>}
+                    {can("LOAN_APPLICATION_REVIEW") && <Button disabled={act.busy} onClick={() => setDlg("info")}>Ask customer for information…</Button>}
+                  </>
                 )}
-                <div className="mt-5 space-y-2">
-                  <Button variant="primary" className="w-full" onClick={() => setAction("approve")}><Icon name="check" size={16} />Approve</Button>
-                  <Button variant="secondary" className="w-full" onClick={() => setAction("info")}>Request information</Button>
-                  <Button variant="secondary" className="w-full" onClick={() => setAction("escalate")}>Escalate</Button>
-                  <Button variant="danger" className="w-full" onClick={() => setAction("reject")}>Reject</Button>
-                </div>
-                <p className="mt-5 flex gap-2 rounded-lg bg-brand-50 p-3 text-xs text-muted">
-                  <Icon name="lock" size={14} className="mt-0.5 shrink-0 text-brand-500" />
-                  <span>Approval does not disburse. The customer still needs to accept the offer, sign, and have a verified bank account. A finance user then releases the payout.</span>
-                </p>
-              </>
-            ) : app.state === "PENDING_EXTERNAL_PROVIDER" ? (
-              <p className="text-sm text-muted">Waiting for the credit bureau response. Decision actions unlock when risk and policy are evaluated. The job retries automatically.</p>
-            ) : app.state === "APPROVED" ? (
-              <>
-                <p className="text-sm text-ink">Approved under policy {app.policyVersion}.</p>
-                <p className="mt-2 text-sm text-muted">Next: offer and KFS, customer e-sign, bank verification, then manual payout release.</p>
-                <div className="mt-4"><LinkButton href="/disbursements" variant="secondary">Open disbursements</LinkButton></div>
-              </>
-            ) : (
-              <p className="text-sm text-muted">This application was rejected. The decision, reasons and policy version are kept in the audit log.</p>
-            )}
-          </Card>
+                {a.status === "APPROVED" && !hasOffer && can("LOAN_APPLICATION_REVIEW") && <Button variant="primary" disabled={act.busy} onClick={() => setDlg("offer")}>Create offer…</Button>}
+                {["REJECTED", "CANCELLED", "EXPIRED", "DRAFT"].includes(a.status) && <p className="text-sm text-muted">No actions available in this status.</p>}
+                {!["APPROVED", "REJECTED", "CANCELLED", "EXPIRED", "DRAFT"].includes(a.status) && !can("LOAN_APPLICATION_REVIEW") && !can("LOAN_APPROVE") && <p className="text-sm text-muted">Your role cannot act on this application.</p>}
+              </div>
+              {["PROCESSING", "MANUAL_REVIEW"].includes(a.status) && !can("LOAN_APPROVE") && can("LOAN_REJECT") && (
+                <p className="mt-3 text-xs text-muted">Your role can reject but not approve. A senior underwriter makes approvals.</p>
+              )}
+            </Card>
+
+            <Card title="Customer">
+              {customer.data ? (
+                <>
+                  <DefList cols={1} items={[
+                    { label: "Name", value: [customer.data.first_name, customer.data.last_name].filter(Boolean).join(" ") || "—" },
+                    { label: "Mobile", value: customer.data.phone_number },
+                    { label: "PAN", value: customer.data.pan_number_masked ?? "—" },
+                    { label: "PAN / KYC / identity", value: [customer.data.pan_status, customer.data.kyc_status, customer.data.identity_verification_status].map((s) => (s ? humanize(s) : "—")).join(" · ") },
+                  ]} />
+                  <Link href={`/customers/${customer.data.customer_id}`} className="mt-3 inline-block text-sm font-medium text-brand-700 hover:underline">Open customer</Link>
+                </>
+              ) : customer.error ? <ErrorNote error={customer.error} /> : <Loading what="customer" />}
+            </Card>
+          </>
         }
       />
 
-      {action === "approve" && (
-        <ApproveDialog
-          app={app}
-          onClose={() => setAction(null)}
-          onConfirm={(amount) => done(`Approved ${inr(amount)} for ${app.id}. The customer will be shown an offer; no money moves until the payout is released.`, "APPROVED", "AUTO_APPROVE", "ok", 3)}
-        />
-      )}
-      <ReasonDialog open={action === "reject"} title="Reject application" description={`${app.id} · ${customerName(app.customerId)}`} confirmLabel="Reject application" tone="danger" reasonLabel="Reason for rejection" reasonHint="Shown to compliance. The customer sees a plain-language summary only." onClose={() => setAction(null)} onConfirm={() => done(`${app.id} rejected. Reason saved to the audit log.`, "REJECTED", "AUTO_REJECT", "bad")} />
-      <ReasonDialog open={action === "info"} title="Request more information" description="The customer is notified in the app and by SMS." confirmLabel="Send request" reasonLabel="What is needed?" reasonHint="For example: last 3 months of bank statements." onClose={() => setAction(null)} onConfirm={() => done(`Information requested for ${app.id}. The application moves to pending information.`, "PENDING_INFORMATION", "PENDING_INFORMATION", "brand")} />
-      <ReasonDialog open={action === "escalate"} title="Escalate to senior underwriter" confirmLabel="Escalate" reasonLabel="Why is this being escalated?" onClose={() => setAction(null)} onConfirm={() => done(`${app.id} escalated to a senior underwriter.`, "MANUAL_REVIEW", "MANUAL_REVIEW", "warn")} />
+      {dlg === "approve" && <ApproveDialog open requested={a.requested_amount} busy={act.busy} onClose={() => setDlg(null)}
+        onConfirm={async (amount, reason) => { if (await post("approve", { approved_amount: amount, reason })) setDlg(null); }} />}
+      <ReasonDialog open={dlg === "reject"} title="Reject this application" description="The customer is told the application was not approved. The reason is recorded and audited." confirmLabel="Reject application" tone="danger"
+        onClose={() => setDlg(null)} onConfirm={async (reason) => { if (await post("reject", { reason })) setDlg(null); }} />
+      <ReasonDialog open={dlg === "info"} title="Ask the customer for more information" description="Moves the application to 'pending additional information'." confirmLabel="Request information"
+        onClose={() => setDlg(null)} onConfirm={async (reason) => { if (await post("transition", { status: "PENDING_ADDITIONAL_INFORMATION", reason })) setDlg(null); }} />
+      {dlg === "offer" && <OfferDialog open requested={a.requested_amount} tenure={a.requested_tenure_days} approved={d?.approved_amount ?? null} busy={act.busy} onClose={() => setDlg(null)}
+        onConfirm={async (body) => { if (await act.run(() => api.post("admin/loan-offers", { loan_application_id: id, ...body }))) setDlg(null); }} />}
     </>
   );
 }
 
-function SignalList({ title, tone, items, empty }: { title: string; tone: Tone; items: string[]; empty: string }) {
-  const dot: Record<string, string> = { ok: "bg-ok", warn: "bg-[#e39a2d]", bad: "bg-bad" };
+function ApproveDialog({ open, requested, busy, onClose, onConfirm }: { open: boolean; requested: string; busy: boolean; onClose: () => void; onConfirm: (amount: string, reason: string) => void }) {
+  const [amount, setAmount] = useState(requested);
+  const [reason, setReason] = useState("");
   return (
-    <div className="min-w-0">
-      <p className="mb-2 text-xs font-medium text-muted">{title}</p>
-      {items.length === 0 ? (
-        <p className="text-sm text-faint">{empty}</p>
-      ) : (
-        <ul className="space-y-2">
-          {items.map((s) => (
-            <li key={s} className="wrap-any flex gap-2 text-sm text-body">
-              <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${dot[tone]}`} />
-              <span>{s}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Dialog open={open} onClose={onClose} title="Approve this application" description="Records an immutable approval decision. You cannot approve more than the customer asked for.">
+      <div className="space-y-4">
+        <Field label="Approved amount (₹)" hint={`Requested ${money(requested)}`}><input className={inputClass} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+        <Field label="Reason" hint="At least 10 characters. Recorded in the audit log with your name and role."><textarea className={`${inputClass} h-24 py-2`} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        <div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button><Button variant="success" disabled={busy || reason.trim().length < 10 || !amount} onClick={() => onConfirm(amount.trim(), reason.trim())}>Approve</Button></div>
+      </div>
+    </Dialog>
   );
 }
 
-function ApproveDialog({ app, onClose, onConfirm }: { app: Application; onClose: () => void; onConfirm: (amount: number) => void }) {
-  const [amount, setAmount] = useState(String(app.eligible));
-  const [reason, setReason] = useState("");
-  const [touched, setTouched] = useState(false);
-
-  const value = Number(amount);
-  const overPolicy = value > app.eligible;
-  const amountError = !Number.isFinite(value) || value <= 0 ? "Enter an amount greater than zero." : overPolicy ? `Above the policy maximum of ${inr(app.eligible)}. Use Escalate to request an override.` : "";
-  const reasonError = reason.trim().length < 5 ? "Enter a reason of at least 5 characters." : "";
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    setTouched(true);
-    if (amountError || reasonError) return;
-    onConfirm(value);
-  }
-
+function OfferDialog({ open, requested, tenure, approved, busy, onClose, onConfirm }: {
+  open: boolean; requested: string; tenure: number; approved: string | null; busy: boolean; onClose: () => void;
+  onConfirm: (b: { principal_amount: string; tenure_days: number; commercial_terms: Record<string, string> }) => void;
+}) {
+  const [principal, setPrincipal] = useState(approved ?? requested);
+  const [days, setDays] = useState(String(tenure));
+  const [rate, setRate] = useState("");
+  const [fee, setFee] = useState("");
   return (
-    <Dialog open onClose={onClose} title="Approve application" description={`${app.id} · ${customerName(app.customerId)}`}>
-      <form onSubmit={submit} className="space-y-4">
-        <Field label="Approved amount (₹)" hint={`Policy maximum for this customer: ${inr(app.eligible)}`}>
-          <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} aria-invalid={touched && !!amountError} className={`${inputClass} num aria-[invalid=true]:ring-bad`} />
-        </Field>
-        {touched && amountError && <p className="-mt-2 text-xs text-bad">{amountError}</p>}
-        <Field label="Reason" hint="Recorded in the audit log with your name and role.">
-          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} aria-invalid={touched && !!reasonError} className="w-full resize-none rounded-lg bg-surface px-3 py-2.5 text-sm text-ink ring-1 ring-inset ring-line-strong focus:ring-2 focus:ring-brand-500 aria-[invalid=true]:ring-bad" />
-        </Field>
-        {touched && reasonError && <p className="-mt-2 text-xs text-bad">{reasonError}</p>}
-        <div className="flex justify-end gap-2 pt-1">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="primary">Approve {Number.isFinite(value) && value > 0 ? inr(value) : ""}</Button>
+    <Dialog open={open} onClose={onClose} title="Create an offer" description={`Draft only: it is not visible to the customer until a senior underwriter issues it. Maximum ${money(approved ?? requested)} (the approved amount).`}>
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Principal (₹)"><input className={inputClass} inputMode="decimal" value={principal} onChange={(e) => setPrincipal(e.target.value)} /></Field>
+          <Field label="Tenure (days)"><input className={inputClass} inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.replace(/\D/g, ""))} /></Field>
+          <Field label="Interest rate (% p.a.)" hint="Set by lender policy."><input className={inputClass} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></Field>
+          <Field label="Processing fee (₹)"><input className={inputClass} inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} /></Field>
         </div>
-      </form>
+        <Notice tone="warn">Interest and fees come from the lender&apos;s policy. This console does not calculate them.</Notice>
+        <div className="flex justify-end gap-2"><Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={busy || !principal || !days || !rate} onClick={() => onConfirm({ principal_amount: principal.trim(), tenure_days: Number(days), commercial_terms: { interest_rate: rate.trim(), ...(fee ? { processing_fee: fee.trim() } : {}) } })}>Create draft</Button></div>
+      </div>
     </Dialog>
   );
 }

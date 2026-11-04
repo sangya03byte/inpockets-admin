@@ -3,120 +3,82 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { Button, Card, DefList, DetailLayout, NotFoundState, Notice, PageHeader, ReasonDialog, StatusBadge, type Tone } from "@/components/ui";
-import { Icon } from "@/components/Icon";
-import { customerName, getDisbursement, type Disbursement } from "@/lib/mock";
-import { fmtDateTime, inr } from "@/lib/format";
+import { Button, Card, DefList, DetailLayout, NotFoundState, Notice, PageHeader, ReasonDialog, StatusBadge, Timeline } from "@/components/ui";
+import { ErrorNote, Loading, money, useAction } from "@/components/live";
+import { api } from "@/lib/api";
+import { fmtDateTime, humanize } from "@/lib/format";
+import { useSession } from "@/lib/session";
+import type { Disbursement } from "@/lib/types";
+import { useApi } from "@/lib/use-api";
 
-type Action = "release" | "retry" | "verify" | null;
+export default function DisbursementDetail() {
+  const { disbursementId: id } = useParams<{ disbursementId: string }>();
+  const { can } = useSession();
+  const [retryOpen, setRetryOpen] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const { data: d, error, loading, reload } = useApi<Disbursement>(`admin/disbursements/${id}`);
+  const act = useAction(reload);
 
-export default function DisbursementDetailPage() {
-  const { disbursementId } = useParams<{ disbursementId: string }>();
-  const base = getDisbursement(disbursementId);
-  const [status, setStatus] = useState<Disbursement["status"] | null>(null);
-  const [action, setAction] = useState<Action>(null);
-  const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null);
+  if (loading && !d) return <Loading what="payout" />;
+  if (error?.status === 404 || error?.status === 422) return <NotFoundState what="Payout" backHref="/disbursements" backLabel="Back to payouts" />;
+  if (!d) return <ErrorNote error={error} />;
 
-  if (!base) return <NotFoundState what="Payout" backHref="/disbursements" backLabel="Back to disbursements" />;
-
-  const d: Disbursement = { ...base, status: status ?? base.status };
-  const allPass = d.checks.every((c) => c.ok);
-  const failing = d.checks.filter((c) => !c.ok);
-
-  const finish = (next: Disbursement["status"], text: string, tone: Tone) => {
-    setStatus(next);
-    setNotice({ tone, text });
-    setAction(null);
-  };
+  const canRetry = ["FAILED", "REVERSED"].includes(d.status) && can("DISBURSEMENT_RETRY");
+  const canRecheck = ["PROCESSING", "REQUIRES_REVIEW"].includes(d.status) && can("DISBURSEMENT_EXECUTE");
 
   return (
     <>
-      <PageHeader
-        crumbs={[{ label: "Disbursements", href: "/disbursements" }, { label: d.id }]}
-        title={d.id}
-        badge={<StatusBadge status={d.status} />}
-        description={`${customerName(d.customerId)} · ${inr(d.amount)} for ${d.loanId}`}
-      />
-      {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
+      <PageHeader crumbs={[{ label: "Disbursements", href: "/disbursements" }, { label: d.id.slice(0, 8) }]}
+        title={money(d.amount)} badge={<StatusBadge status={d.status} />} description={`To ${d.account_number_masked} · ${d.ifsc}`} />
+      <div className="mb-4 space-y-3"><ErrorNote error={act.error} />{note && <Notice tone="brand">{note}</Notice>}</div>
+
+      {d.status === "REQUIRES_REVIEW" && <div className="mb-4"><Notice tone="bad"><strong>Needs a human.</strong> The provider&apos;s answers conflict or never settled{d.review_reason ? ` (${humanize(d.review_reason)})` : ""}. Re-check with the provider before doing anything else; never pay again by hand.</Notice></div>}
 
       <DetailLayout
         main={
           <>
-            <Card title="Pre-disbursement checks" description="All of these must pass before a payout can be released.">
-              <ul className="divide-y divide-line">
-                {d.checks.map((c) => (
-                  <li key={c.label} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                    <span className={`flex size-6 shrink-0 items-center justify-center rounded-full ${c.ok ? "bg-ok-soft text-ok" : "bg-bad-soft text-bad"}`}>
-                      <Icon name={c.ok ? "check" : "x"} size={14} />
-                    </span>
-                    <span className="text-sm text-ink">{c.label}</span>
-                    {!c.ok && <span className="ml-auto text-xs font-medium text-bad">Failed</span>}
-                  </li>
-                ))}
-              </ul>
+            <Card title="Payout">
+              <DefList items={[
+                { label: "Amount", value: <span className="num">{money(d.amount)} {d.currency}</span> },
+                { label: "Account", value: <span className="num">{d.account_number_masked}</span> },
+                { label: "Attempt", value: d.attempt },
+                { label: "Provider", value: d.provider },
+                { label: "Provider reference", value: <span className="num">{d.provider_ref ?? "—"}</span> },
+                { label: "UTR", value: <span className="num">{d.utr ?? "—"}</span> },
+                { label: "Requested", value: fmtDateTime(d.requested_at) },
+                { label: "Dispatched", value: d.dispatched_at ? fmtDateTime(d.dispatched_at) : "—" },
+                { label: "Last checked", value: d.last_polled_at ? fmtDateTime(d.last_polled_at) : "—" },
+                { label: "Completed", value: d.completed_at ? fmtDateTime(d.completed_at) : "—" },
+                { label: "Failure code", value: d.failure_code ?? "—" },
+                { label: "Dispatch attempts", value: d.dispatch_attempts },
+              ]} />
             </Card>
-
-            <Card title="Payout details">
-              <DefList
-                cols={3}
-                items={[
-                  { label: "Amount", value: inr(d.amount) },
-                  { label: "Bank", value: d.bank },
-                  { label: "Account", value: d.account },
-                  { label: "IFSC", value: d.ifsc },
-                  { label: "Name match with identity", value: `${d.nameMatch}%` },
-                  { label: "Attempts", value: d.attempts },
-                  { label: "Provider reference", value: d.providerRef },
-                  { label: "Idempotency key", value: <span className="num">{d.idempotencyKey}</span> },
-                  { label: "Created", value: fmtDateTime(d.created) },
-                ]}
-              />
-              {d.failureReason && <p className="wrap-any mt-5 rounded-lg bg-warn-soft px-4 py-3 text-sm text-warn">{d.failureReason}</p>}
+            <Card title="Provider events" description="Every webhook, kept and de-duplicated by the provider's event id.">
+              {(d.events ?? []).length === 0 ? <p className="text-sm text-muted">No provider events yet.</p> : (
+                <Timeline items={(d.events ?? []).map((e) => ({ title: `${humanize(e.reported_status)} → ${humanize(e.outcome)}`, meta: `${fmtDateTime(e.received_at)} · ${e.provider_event_id}` }))} />
+              )}
             </Card>
           </>
         }
         side={
           <>
-            <Card title="Action">
-              {d.status === "PENDING" && (
-                <>
-                  <Button variant="primary" className="w-full" disabled={!allPass} onClick={() => setAction("release")}>Release {inr(d.amount)}</Button>
-                  {!allPass && <p className="mt-3 text-xs text-bad">Blocked: {failing.map((f) => f.label.toLowerCase()).join(", ")}.</p>}
-                  <p className="mt-4 flex gap-2 rounded-lg bg-brand-50 p-3 text-xs text-muted">
-                    <Icon name="lock" size={14} className="mt-0.5 shrink-0 text-brand-500" />
-                    <span>Release is idempotent. Pressing it twice, or retrying after a timeout, cannot pay out twice. The customer sees success only after the provider confirms.</span>
-                  </p>
-                </>
-              )}
-              {d.status === "PROCESSING" && <p className="text-sm text-muted">Sent to the provider. Waiting for the confirmation webhook. No action needed.</p>}
-              {d.status === "SUCCESS" && <p className="text-sm text-muted">Paid and confirmed by the provider. The ledger entry and repayment schedule exist.</p>}
-              {d.status === "FAILED" && (
-                <>
-                  <Button className="w-full" onClick={() => setAction("retry")}>Retry payout</Button>
-                  <p className="mt-3 text-xs text-muted">Retries reuse the same idempotency key, so the provider rejects a duplicate if the first attempt actually went through.</p>
-                </>
-              )}
-              {d.status === "REQUIRES_REVIEW" && (
-                <>
-                  <Button className="w-full" onClick={() => setAction("verify")}>Confirm status with provider</Button>
-                  <p className="mt-3 text-xs text-muted">Do not retry until the provider confirms whether money moved. See the reconciliation record.</p>
-                </>
-              )}
-              {d.status === "REVERSED" && <p className="text-sm text-muted">This payout was reversed. A reversal entry exists in the ledger.</p>}
+            <Card title="Actions">
+              <div className="flex flex-col gap-2">
+                {canRecheck && <Button variant="primary" disabled={act.busy} onClick={async () => { setNote(null); await act.run(async () => { const r = await api.post<{ outcome: string }>(`admin/disbursements/${id}/recheck`); setNote(`Provider re-check: ${humanize(r.outcome)}.`); }); }}>Re-check with provider</Button>}
+                {canRetry && <Button variant="danger" disabled={act.busy} onClick={() => setRetryOpen(true)}>Retry payout…</Button>}
+                {!canRetry && !canRecheck && <p className="text-sm text-muted">{["SUCCESS", "PENDING"].includes(d.status) ? "Nothing to do." : "Only finance can act on payouts."}</p>}
+              </div>
+              <p className="mt-3 text-xs text-muted">Retry first asks the provider whether the previous attempt really did not pay, then uses a new idempotency key.</p>
             </Card>
-            <Card title="Links">
-              <ul className="space-y-2 text-sm">
-                <li><Link href={`/loans/${d.loanId}`} className="text-brand-700 hover:underline">Loan {d.loanId}</Link></li>
-                <li><Link href={`/customers/${d.customerId}`} className="text-brand-700 hover:underline">{customerName(d.customerId)}</Link></li>
-              </ul>
+            <Card title="Related">
+              <Link href={`/offers/${d.loan_offer_id}`} className="text-sm font-medium text-brand-700 hover:underline">Open offer</Link><br />
+              <Link href={`/applications/${d.loan_application_id}`} className="text-sm font-medium text-brand-700 hover:underline">Open application</Link>
             </Card>
           </>
         }
       />
-
-      <ReasonDialog open={action === "release"} title={`Release ${inr(d.amount)}`} description={`To ${d.bank} ${d.account} for ${customerName(d.customerId)}`} confirmLabel="Release payout" tone="primary" reasonLabel="Release note" reasonHint="For example: checks reviewed, bank name match 97%." onClose={() => setAction(null)} onConfirm={() => finish("PROCESSING", `Payout ${d.id} sent to the provider. Status changes to paid only after the provider confirms.`, "brand")} />
-      <ReasonDialog open={action === "retry"} title="Retry payout" confirmLabel="Retry payout" reasonLabel="Why is it safe to retry?" reasonHint="Confirm the earlier attempt did not credit the customer." onClose={() => setAction(null)} onConfirm={() => finish("PROCESSING", `Retry sent for ${d.id} using the same idempotency key.`, "brand")} />
-      <ReasonDialog open={action === "verify"} title="Confirm status with provider" confirmLabel="Record check" reasonLabel="What did the provider say?" onClose={() => setAction(null)} onConfirm={() => finish("PROCESSING", `Provider status check recorded for ${d.id}.`, "brand")} />
+      <ReasonDialog open={retryOpen} title="Retry this payout" description="Recorded in the audit log. The provider is asked first; if it reports the money moved, nothing is re-sent." confirmLabel="Retry payout" tone="danger"
+        onClose={() => setRetryOpen(false)} onConfirm={async (reason) => { if (await act.run(() => api.post(`admin/disbursements/${id}/retry`, { reason }))) setRetryOpen(false); }} />
     </>
   );
 }
